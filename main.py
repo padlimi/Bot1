@@ -10,34 +10,29 @@ from PIL import Image, ImageDraw, ImageFont
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
-# --- KONFIGURASI WARNA (SESUAI CONTOH GAMBAR) ---
+# --- WARNA (DIOPTIMALKAN) ---
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-RED_PURE = (255, 0, 0)          # Untuk coretan tipis
-RED_DEEP = (180, 0, 0)          # Merah Pekat Mewah untuk header
-BRIGHT_BLUE_ROYAL = (0, 100, 210) # Biru Terang Mewah (Royal Blue)
-YELLOW_LABEL = (255, 240, 0)    # Kuning Mewah untuk label
+BRIGHT_BLUE = (0, 110, 230)  # Biru Royal Cerah
+RED_TEXT = (220, 0, 0)       # Merah tajam untuk header
+YELLOW_LABEL = (255, 230, 0) # Kuning untuk label kecil
 
-# --- UKURAN GRID & CELL ---
+# --- UKURAN GRID ---
 COLS, ROWS = 2, 4
 ITEMS_PER_IMAGE = COLS * ROWS
 CELL_W, CELL_H = 600, 450
-BORDER_GRID = 15
-LINE_ULTRA_THIN = 1  # Batas gambar tipis
+BORDER_GRID = 12
 IMG_W = COLS * CELL_W + (COLS + 1) * BORDER_GRID
 IMG_H = ROWS * CELL_H + (ROWS + 1) * BORDER_GRID
 
-# --- KEYBOARD PERMANEN ---
+# --- KEYBOARD ---
 MAIN_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("/promo"), KeyboardButton("/normal")],
     [KeyboardButton("/paket")]
 ], resize_keyboard=True, one_time_keyboard=False)
 
-def get_font(size, bold=True, italic=False):
-    # Mengutamakan font Roboto, Fallback ke font sistem
+def get_font(size, bold=True):
     font_file = "Roboto-Bold.ttf" if bold else "Roboto-Regular.ttf"
-    if italic: font_file = "Roboto-BoldItalic.ttf" if bold else "Roboto-Italic.ttf"
-    
     paths = [font_file, f"./{font_file}", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
     for path in paths:
         try: return ImageFont.truetype(path, size)
@@ -50,90 +45,72 @@ def format_angka(harga):
         return f"{int(angka_str):,}".replace(",", ".")
     except: return str(harga)
 
-# --- FUNGSI DRAW UTAMA: PAKET (LAYOUT MEWAH & RAPI SESUAI CONTOH) ---
+# --- FUNGSI UTAMA PAKET (PERBAIKAN TOTAL LAYOUT) ---
 def draw_paket(draw, x, y, h_lama, h_baru):
-    # 1. Background Kotak Mewah
-    # Bagian Atas: Biru Terang (Royal Blue)
-    header_height = CELL_H * 0.45
-    draw.rectangle([x, y, x + CELL_W, y + header_height], fill=BRIGHT_BLUE_ROYAL, outline=WHITE, width=LINE_ULTRA_THIN)
-    
-    # Bagian Bawah: Hitam Pekat
-    price_block_y = y + header_height
-    draw.rectangle([x, price_block_y, x + CELL_W, y + CELL_H], fill=BLACK, outline=WHITE, width=LINE_ULTRA_THIN)
-    
-    # --- BAGIAN ATAS (BIRU) ---
-    # Header "PAKET HEMAT" (Merah Pekat Mewah) - Posisi Y: 55
-    draw.text((x + CELL_W//2, y + 55), "PAKET HEMAT", fill=RED_DEEP, anchor="mm", font=get_font(65, bold=True))
-    
-    # Teks Label "Harga Normal" (Kuning) - Posisi X: 20
-    draw.text((x + 20, y + 115), "Harga Normal", fill=YELLOW_LABEL, anchor="lm", font=get_font(40, bold=False))
-    
-    # Blok Harga Normal (Lama) - Mewah
-    txt_lama = format_angka(h_lama)
-    f_old_price = get_font(75, bold=True)
-    
-    # Simbol Rp (Putih Italic) - Posisi X: 20 + Lebar "Harga Normal" + 10
-    rp_lama_width = draw.textbbox((0,0), "Rp", font=get_font(40, bold=True, italic=True))[2]
-    x_rp_lama = x + 20 + rp_lama_width + 10 # Penempatan rapi
-    draw.text((x_rp_lama, y + 165), "Rp", fill=WHITE, anchor="rm", font=get_font(40, bold=True, italic=True))
-    
-    # Harga Normal Angka (Putih) - Posisi X: x_rp_lama + 10
-    x_angka_lama = x_rp_lama + 10
-    draw.text((x_angka_lama, y + 165), txt_lama, fill=WHITE, anchor="lm", font=f_old_price)
-    
-    # Coretan Mewah (Garis Coret tipis Putih di atas Harga Normal)
-    bbox_old = draw.textbbox((0,0), txt_lama, font=f_old_price)
-    tw_old = bbox_old[2] - bbox_old[0]
-    draw.line([x_angka_lama - 5, y + 165, x_angka_lama + tw_old + 5, y + 165], fill=WHITE, width=6)
-    
-    
-    # --- BAGIAN BAWAH (HITAM) ---
-    # Teks Label "Harga Spesial" (Kuning) - Posisi X: 20, Y: 220
-    draw.text((x + 20, price_block_y + 25), "Harga Spesial", fill=YELLOW_LABEL, anchor="lm", font=get_font(40, bold=False))
-    
-    # Blok Harga Spesial (Baru) - SANGAT BESAR & JELAS
-    txt_promo = format_angka(h_baru)
-    
-    # Simbol Rp (Putih Italic) - Sesuai Contoh
-    x_rp_baru = x + 20
-    draw.text((x_rp_baru, price_block_y + 80), "Rp", fill=WHITE, anchor="lm", font=get_font(50, bold=True, italic=True))
-    
-    # Harga Spesial Angka (Putih) - Auto-Size Proposional
-    # Koordinat Tengah Blok Hitam
-    curr_size = 200 # Ukuran maksimal proposional
-    font_p = get_font(curr_size, bold=True)
-    
-    # Auto-fit proposional agar tidak menabrak label
-    while curr_size > 50:
-        bw = draw.textbbox((0, 0), txt_promo, font=font_p)[2] - draw.textbbox((0, 0), txt_promo, font=font_p)[0]
-        if bw <= (CELL_W - rp_lama_width - 80): break # Beri ruang dari Rp
-        curr_size -= 10
-        font_p = get_font(curr_size, bold=True)
-        
-    # Penempatan harga rapi di tengah blok hitam, sedikit bergeser dari Rp
-    draw.text((x + CELL_W//2 + rp_lama_width//2 + 10, price_block_y + 160), txt_promo, fill=WHITE, anchor="mm", font=font_p)
+    # 1. Background Split (Atas Biru, Bawah Hitam)
+    split_h = int(CELL_H * 0.38)
+    draw.rectangle([x, y, x + CELL_W, y + split_h], fill=BRIGHT_BLUE)
+    draw.rectangle([x, y + split_h, x + CELL_W, y + CELL_H], fill=BLACK)
+    # Outline tipis 1px
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], outline=WHITE, width=1)
 
-# --- FUNGSI DRAW LAINNYA (TETAP SAMA, OUTLINE TIPIS) ---
+    # 2. Header "PAKET HEMAT"
+    draw.text((x + CELL_W//2, y + 45), "PAKET HEMAT", fill=RED_TEXT, anchor="mm", font=get_font(60))
+
+    # 3. Label & Harga Normal (Di bagian Biru)
+    draw.text((x + 15, y + 90), "Harga Normal:", fill=WHITE, anchor="lm", font=get_font(28, False))
+    
+    txt_old = format_angka(h_lama)
+    f_old = get_font(65, True)
+    # Rp kecil untuk harga lama
+    draw.text((x + 15, y + 135), "Rp", fill=WHITE, anchor="lm", font=get_font(25, True))
+    # Angka harga lama
+    draw.text((x + 60, y + 135), txt_old, fill=WHITE, anchor="lm", font=f_old)
+    
+    # Coretan Putih pada Harga Lama
+    bbox_old = draw.textbbox((x + 60, y + 135), txt_old, font=f_old, anchor="lm")
+    draw.line([bbox_old[0]-5, y+135, bbox_old[2]+5, y+135], fill=WHITE, width=5)
+
+    # 4. Label & Harga Spesial (Di bagian Hitam)
+    draw.text((x + 15, y + split_h + 25), "Harga Spesial:", fill=YELLOW_LABEL, anchor="lm", font=get_font(28, False))
+    
+    # Simbol Rp besar di kiri atas blok hitam
+    draw.text((x + 20, y + split_h + 75), "Rp", fill=WHITE, anchor="lm", font=get_font(40, True))
+
+    # 5. Autofit Harga Baru (Putih Besar di tengah Hitam)
+    txt_new = format_angka(h_baru)
+    curr_size = 200
+    font_new = get_font(curr_size, True)
+    # Cek lebar agar tidak meluap
+    while curr_size > 50:
+        bw = draw.textbbox((0, 0), txt_new, font=font_new)[2]
+        if bw <= (CELL_W - 100): break
+        curr_size -= 10
+        font_new = get_font(curr_size, True)
+
+    draw.text((x + CELL_W//2 + 20, y + split_h + 155), txt_new, fill=WHITE, anchor="mm", font=font_new)
+
+# --- FUNGSI PROMO & NORMAL ---
 def draw_promo(draw, x, y, nama, harga):
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=YELLOW_LABEL, outline=BLACK, width=LINE_ULTRA_THIN)
-    draw.rectangle([x, y, x + CELL_W, y + 90], fill=RED_PURE)
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=YELLOW_LABEL, outline=BLACK, width=1)
+    draw.rectangle([x, y, x + CELL_W, y + 90], fill=RED_TEXT)
     draw.text((x + CELL_W//2, y + 45), "PROMOSI", fill=YELLOW_LABEL, anchor="mm", font=get_font(55))
-    draw.text((x + CELL_W//2, y + 175), nama.upper(), fill=BLACK, anchor="mm", font=get_font(50))
-    draw.text((x + CELL_W//2, y + 340), format_angka(harga), fill=RED_PURE, anchor="mm", font=get_font(160))
+    draw.text((x + CELL_W//2, y + 180), nama.upper(), fill=BLACK, anchor="mm", font=get_font(50))
+    draw.text((x + CELL_W//2, y + 340), format_angka(harga), fill=RED_TEXT, anchor="mm", font=get_font(170))
 
 def draw_normal(draw, x, y, nama, harga):
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=WHITE, outline=(200, 200, 200), width=LINE_ULTRA_THIN)
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=WHITE, outline=(200, 200, 200), width=1)
     draw.text((x + CELL_W//2, y + 130), nama.upper(), fill=BLACK, anchor="mm", font=get_font(50))
-    draw.text((x + CELL_W//2, y + 310), format_angka(harga), fill=BLACK, anchor="mm", font=get_font(160))
+    draw.text((x + CELL_W//2, y + 310), format_angka(harga), fill=BLACK, anchor="mm", font=get_font(170))
 
-# --- HANDLER BOT ---
+# --- BOT HANDLER ---
 async def start(update: Update, context):
-    await update.message.reply_text("Silahkan pilih mode cetak Mewah di bawah:", reply_markup=MAIN_KEYBOARD)
+    await update.message.reply_text("Pilih mode cetak:", reply_markup=MAIN_KEYBOARD)
 
 async def set_mode(update: Update, context):
     mode = update.message.text.replace('/', '')
     context.user_data['mode'] = mode
-    await update.message.reply_text(f"✅ Mode {mode.upper()} MEWAH Aktif.\nKirim data (Contoh: 100000.7000.2)", reply_markup=ForceReply())
+    await update.message.reply_text(f"Mode {mode.upper()} Aktif. Kirim data (ex: 50000.35000.4)", reply_markup=ForceReply())
 
 async def handle_message(update: Update, context):
     mode = context.user_data.get('mode')
@@ -152,7 +129,7 @@ async def handle_message(update: Update, context):
             elif mode == 'paket':
                 final_items.append({'h_awal': parts[0], 'h_promo': parts[1]})
             else:
-                final_items.append({'nama': parts[0], 'harga': parts[Part2]})
+                final_items.append({'nama': parts[0], 'harga': parts[1]})
         except: continue
 
     if not final_items: return
@@ -178,7 +155,6 @@ async def handle_message(update: Update, context):
         img.save(bio, 'PNG')
         bio.seek(0)
         await update.message.reply_photo(photo=bio, reply_markup=MAIN_KEYBOARD)
-    
     context.user_data['mode'] = None
 
 def main():
