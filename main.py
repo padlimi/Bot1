@@ -71,18 +71,18 @@ def format_angka(harga):
 def fit_text_to_width(draw, text, max_width, initial_size, bold=True):
     """Menyesuaikan ukuran font agar muat dalam lebar tertentu"""
     size = initial_size
-    while size > 30:
+    while size > 20:
         font = get_font(size, bold)
         bbox = draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
         if text_width <= max_width:
             return font, size
         size -= 5
-    return get_font(30, bold), 30
+    return get_font(20, bold), 20
 
 
 def draw_paket(draw, x, y, harga_normal, harga_spesial):
-    """Gambar kartu PAKET HEMAT dengan auto-fit font"""
+    """Gambar kartu PAKET HEMAT dengan alignment kanan untuk harga normal"""
     
     # 1. Background biru
     draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=BLUE_BG)
@@ -90,7 +90,7 @@ def draw_paket(draw, x, y, harga_normal, harga_spesial):
     # 2. Header "PAKET HEMAT"
     header_text = "PAKET HEMAT"
     header_center_x = x + CELL_W // 2
-    header_y = y + 50
+    header_y = y + 55
     
     header_font = get_font(68, bold=True)
     # Bayangan
@@ -100,56 +100,61 @@ def draw_paket(draw, x, y, harga_normal, harga_spesial):
     draw.text((header_center_x, header_y), header_text, 
               fill=RED_HEADER, anchor="mm", font=header_font)
     
-    # 3. Label "Harga Normal"
-    y_normal_label = y + 115
-    draw.text((x + 20, y_normal_label), "Harga Normal", 
+    # 3. Label "Harga Normal" (kiri)
+    y_normal_label = y + 125
+    draw.text((x + 25, y_normal_label), "Harga Normal", 
               fill=WHITE, anchor="lm", font=get_font(30, bold=False))
     
-    # 4. Harga Normal (dengan auto-fit)
-    y_normal_value = y + 120
+    # 4. Harga Normal (alignment KANAN)
+    y_normal_value = y + 125
     txt_normal = format_angka(harga_normal)
-    max_width_normal = CELL_W - 180  # Ruang untuk "Rp" dan margin
+    max_width_normal = CELL_W - 160  # Ruang untuk teks
     
-    # Auto-fit untuk harga normal
-    normal_font, _ = fit_text_to_width(draw, txt_normal, max_width_normal, 65, bold=True)
+    # Auto-fit font
+    normal_font, _ = fit_text_to_width(draw, txt_normal, max_width_normal, 60, bold=True)
+    
+    # Posisi di kanan (x = CELL_W - margin)
+    margin_right = 30
+    normal_x = x + CELL_W - margin_right
+    
+    # Gambar teks harga normal (anchor="rm" = kanan tengah)
+    draw.text((normal_x, y_normal_value), txt_normal, 
+              fill=WHITE, anchor="rm", font=normal_font)
+    
+    # Gambar "Rp" di sebelah kiri angka (sedikit geser ke kiri)
+    rp_font = get_font(32, bold=True)
+    # Hitung lebar teks harga untuk posisi Rp yang tepat
     normal_bbox = draw.textbbox((0, 0), txt_normal, font=normal_font)
     normal_width = normal_bbox[2] - normal_bbox[0]
+    rp_x = normal_x - normal_width - 8
+    draw.text((rp_x, y_normal_value), "Rp", 
+              fill=WHITE, anchor="rm", font=rp_font)
     
-    # Posisi "Rp"
-    draw.text((x + 20, y_normal_value), "Rp", 
-              fill=WHITE, anchor="lm", font=get_font(34, bold=True))
-    
-    # Posisi angka (setelah Rp + spasi)
-    angka_x = x + 75
-    draw.text((angka_x, y_normal_value), txt_normal, 
-              fill=WHITE, anchor="lm", font=normal_font)
-    
-    # Coretan garis putih di atas harga normal
+    # Coretan garis putih (lebar mengikuti teks)
     line_y = y_normal_value + 8
-    draw.line([angka_x - 5, line_y, angka_x + normal_width + 5, line_y], 
-              fill=WHITE, width=5)
+    draw.line([rp_x - 5, line_y, normal_x + 5, line_y], fill=WHITE, width=5)
     
-    # 5. Label "Harga Spesial"
-    y_spesial_label = y + 185
-    draw.text((x + 20, y_spesial_label), "Harga Spesial", 
+    # 5. Label "Harga Spesial" (kiri)
+    y_spesial_label = y + 195
+    draw.text((x + 25, y_spesial_label), "Harga Spesial", 
               fill=WHITE, anchor="lm", font=get_font(30, bold=False))
     
     # 6. Kotak hitam untuk harga spesial
-    box_y = y + 220
-    box_h = CELL_H - 265
-    box_x1 = x + 15
-    box_x2 = x + CELL_W - 15
-    draw.rectangle([box_x1, box_y, box_x2, y + CELL_H - 15], fill=BLACK)
+    box_y = y + 235
+    box_h = CELL_H - 280
+    box_x1 = x + 20
+    box_x2 = x + CELL_W - 20
+    draw.rectangle([box_x1, box_y, box_x2, y + CELL_H - 18], fill=BLACK)
     
-    # 7. Teks "Rp" di dalam kotak
-    draw.text((box_x1 + 30, box_y + box_h // 2), "Rp", 
-              fill=WHITE, anchor="lm", font=get_font(48, bold=True))
+    # 7. Teks "Rp" di kiri kotak hitam
+    draw.text((box_x1 + 25, box_y + box_h // 2), "Rp", 
+              fill=WHITE, anchor="lm", font=get_font(45, bold=True))
     
-    # 8. Harga Spesial (auto-fit besar)
+    # 8. Harga Spesial (alignment KANAN dalam kotak hitam)
     txt_spesial = format_angka(harga_spesial)
-    max_width_spesial = CELL_W - 120
+    max_width_spesial = CELL_W - 100
     
-    spesial_font, _ = fit_text_to_width(draw, txt_spesial, max_width_spesial, 150, bold=True)
+    spesial_font, _ = fit_text_to_width(draw, txt_spesial, max_width_spesial, 140, bold=True)
     draw.text((box_x2 - 20, box_y + box_h // 2), txt_spesial, 
               fill=WHITE, anchor="rm", font=spesial_font)
 
@@ -161,14 +166,12 @@ def draw_promo(draw, x, y, nama, harga):
     draw.text((x + CELL_W // 2, y + 50), "PROMOSI", 
               fill=(255, 240, 0), anchor="mm", font=get_font(55, bold=True))
     
-    # Nama produk auto-fit
     nama_text = nama.upper()
     max_width = CELL_W - 60
     name_font, _ = fit_text_to_width(draw, nama_text, max_width, 50, bold=True)
     draw.text((x + CELL_W // 2, y + 170), nama_text, 
               fill=BLACK, anchor="mm", font=name_font)
     
-    # Harga auto-fit
     harga_text = format_angka(harga)
     price_font, _ = fit_text_to_width(draw, harga_text, CELL_W - 80, 140, bold=True)
     draw.text((x + CELL_W // 2, y + 320), harga_text, 
@@ -191,7 +194,6 @@ def draw_normal(draw, x, y, nama, harga):
               fill=BLACK, anchor="mm", font=price_font)
 
 
-# --- PARSING DENGAN QTY ---
 def parse_input_paket(line):
     """Format: harga_awal.harga_promo.qty (qty opsional)"""
     parts = line.strip().split('.')
@@ -205,37 +207,20 @@ def parse_input_paket(line):
     return {
         'harga_normal': harga_awal,
         'harga_spesial': harga_promo,
-        'qty': min(qty, 100)  # Maks 100
+        'qty': min(qty, 100)
     }
 
 
-def parse_input_regular(line):
-    """Format: nama.harga.qty (qty opsional)"""
-    parts = line.strip().split('.')
-    if len(parts) < 2:
-        return None
-    
-    nama = '.'.join(parts[:-1]).strip()
-    harga = parts[-1].strip()
-    qty = 1
-    
-    # Cek apakah ada angka qty di bagian terakhir? (opsional)
-    # Untuk regular, qty tidak didukung di format ini
-    
-    return {'nama': nama, 'harga': harga, 'qty': 1}
-
-
-# --- HANDLER BOT ---
 async def start(update: Update, context):
     await update.message.reply_text(
         "🎨 *Bot Cetak Harga Mewah*\n\n"
         "📦 *Mode PAKET* (2 harga)\n"
         "Format: `harga_normal.harga_promo.qty`\n"
-        "Contoh: `450000.8000.5` (cetak 5 kali)\n\n"
-        "🔥 *Mode PROMO* (diskon)\n"
+        "Contoh: `500000.60000.3`\n\n"
+        "🔥 *Mode PROMO*\n"
         "Format: `nama.harga`\n"
         "Contoh: `Indomie Goreng.3500`\n\n"
-        "📄 *Mode NORMAL* (harga biasa)\n"
+        "📄 *Mode NORMAL*\n"
         "Format: `nama.harga`\n"
         "Contoh: `Beras Premium.75000`\n\n"
         "Multiple line diperbolehkan.",
@@ -248,15 +233,9 @@ async def set_mode(update: Update, context):
     mode = update.message.text.replace('/', '')
     context.user_data['mode'] = mode
     
-    mode_help = {
-        'paket': "📦 PAKET HEMAT\nFormat: `harga_normal.harga_promo.qty`\nContoh: `450000.8000.3`",
-        'promo': "🔥 PROMO\nFormat: `nama.harga`\nContoh: `Indomie Goreng.3500`",
-        'normal': "📄 NORMAL\nFormat: `nama.harga`\nContoh: `Beras Premium.75000`"
-    }
-    
     await update.message.reply_text(
-        f"✅ Mode {mode.upper()} aktif.\n\n{mode_help.get(mode, '')}\n\nKirim data sekarang:",
-        parse_mode="Markdown",
+        f"✅ Mode {mode.upper()} aktif.\n\n"
+        f"Kirim data sekarang (pisah dengan titik .):",
         reply_markup=ForceReply()
     )
 
@@ -282,16 +261,14 @@ async def handle_message(update: Update, context):
             if mode == 'paket':
                 item = parse_input_paket(line)
                 if item:
-                    # Duplikasi sesuai qty
                     for _ in range(item['qty']):
                         all_items.append({
                             'harga_normal': item['harga_normal'],
                             'harga_spesial': item['harga_spesial']
                         })
                 else:
-                    errors.append(f"Baris {line_num}: format salah (contoh: 450000.8000.2)")
+                    errors.append(f"Baris {line_num}: format salah (contoh: 500000.60000.2)")
             else:
-                # Mode promo atau normal
                 parts = line.split('.')
                 if len(parts) < 2:
                     errors.append(f"Baris {line_num}: format salah (contoh: Nama.5000)")
@@ -312,12 +289,10 @@ async def handle_message(update: Update, context):
     
     await update.message.reply_text(f"🖨️ Memproses {len(all_items)} item...")
     
-    # Batasi maksimal item
     if len(all_items) > 200:
         await update.message.reply_text("⚠️ Maksimal 200 item, sisanya diabaikan.")
         all_items = all_items[:200]
     
-    # Buat gambar
     num_images = math.ceil(len(all_items) / ITEMS_PER_IMAGE)
     
     for img_idx in range(num_images):
