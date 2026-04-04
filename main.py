@@ -10,14 +10,14 @@ from PIL import Image, ImageDraw, ImageFont
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
-# --- KONFIGURASI WARNA PERSIS GAMBAR ---
+# --- KONFIGURASI WARNA PERSIS CONTOH (UPDATED) ---
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-BLUE_BG = (10, 80, 180)    # Biru latar belakang
-RED_SHADOW = (180, 0, 0)   # Merah gelap untuk "PAKET"
-RED_LIGHT = (255, 40, 40)  # Merah terang untuk bayangan teks
+BLUE_BG_ROYAL = (0, 102, 210)  # Biru Cerah Royal (Updated)
+RED_TEXT_HEADER = (220, 0, 0) # Merah Header (Updated)
+RED_SHADOW_HEADER = (160, 0, 0) # Merah Tua Bayangan Header (Updated)
 
-# --- UKURAN GRID ---
+# --- UKURAN GRID & CELL ---
 COLS, ROWS = 2, 4
 ITEMS_PER_IMAGE = COLS * ROWS
 CELL_W, CELL_H = 600, 450
@@ -25,7 +25,7 @@ BORDER_GRID = 10
 IMG_W = COLS * CELL_W + (COLS + 1) * BORDER_GRID
 IMG_H = ROWS * CELL_H + (ROWS + 1) * BORDER_GRID
 
-# --- KEYBOARD ---
+# --- KEYBOARD PERMANEN ---
 MAIN_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("/promo"), KeyboardButton("/normal")],
     [KeyboardButton("/paket")]
@@ -45,72 +45,76 @@ def format_angka(harga):
         return f"{int(angka_str):,}".replace(",", ".")
     except: return str(harga)
 
-# --- FUNGSI CLONE LAYOUT GAMBAR ---
+# --- FUNGSI CLONE LAYOUT: PAKET (UPDATED & PERBAIKAN TOTAL) ---
 def draw_paket(draw, x, y, h_lama, h_baru):
     # 1. Background Biru
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=BLUE_BG)
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=BLUE_BG_ROYAL)
     
-    # 2. Header "PAKET HEMAT" (Gaya Berbayang/Outline)
+    # 2. Header "PAKET HEMAT" (Gaya Berbayang Mewah)
     txt_header = "PAKET HEMAT"
     f_header = get_font(75, True)
     # Gambar bayangan merah dulu
-    draw.text((x + CELL_W//2 + 4, y + 54), txt_header, fill=RED_SHADOW, anchor="mm", font=f_header)
+    draw.text((x + CELL_W//2 + 5, y + 55), txt_header, fill=RED_SHADOW_HEADER, anchor="mm", font=f_header)
     # Gambar teks utama
-    draw.text((x + CELL_W//2, y + 50), txt_header, fill=RED_LIGHT, anchor="mm", font=f_header)
+    draw.text((x + CELL_W//2, y + 50), txt_header, fill=RED_TEXT_HEADER, anchor="mm", font=f_header)
 
-    # 3. Baris Harga Normal
-    draw.text((x + 10, y + 105), "Harga Normal", fill=WHITE, anchor="lm", font=get_font(30, False))
-    # Kotak Hitam Kecil untuk Rp Normal
-    draw.rectangle([x + 230, y + 85, x + 310, y + 125], fill=BLACK)
-    draw.text((x + 240, y + 105), "Rp", fill=WHITE, anchor="lm", font=get_font(28, True))
-    # Angka Harga Normal + Coretan
-    txt_old = format_angka(h_lama)
-    f_old = get_font(45, True)
-    draw.text((x + 330, y + 105), txt_old, fill=WHITE, anchor="lm", font=f_old)
-    bbox_old = draw.textbbox((x + 330, y + 105), txt_old, font=f_old, anchor="lm")
-    draw.line([bbox_old[0]-2, y+105, bbox_old[2]+2, y+105], fill=WHITE, width=4)
-
-    # 4. Area Harga Spesial (Blok Hitam Besar)
-    draw.text((x + 10, y + 150), "Harga Spesial", fill=WHITE, anchor="lm", font=get_font(30, False))
-    # Blok Hitam Utama
-    draw.rectangle([x + 10, y + 175, x + CELL_W - 10, y + CELL_H - 15], fill=BLACK)
-    # Label Rp di dalam blok hitam
-    draw.text((x + 25, y + 210), "Rp", fill=WHITE, anchor="mm", font=get_font(40, True))
+    # 3. Baris Harga Normal (HAPUS LATAR HITAM & BESARKAN FONT)
+    draw.text((x + 15, y + 110), "Harga Normal", fill=WHITE, anchor="lm", font=get_font(32, False))
     
-    # 5. Autofit Angka Harga Baru
+    # Simbol Rp Normal (Langsung di atas biru, HAPUS LATAR HITAM KECIL)
+    draw.text((x + 230, y + 110), "Rp", fill=WHITE, anchor="lm", font=get_font(30, True))
+    
+    # Angka Harga Normal (DIBESARKAN DRASHIS)
+    txt_old = format_angka(h_lama)
+    f_old = get_font(70, True) # Font diperbesar signifikan (Updated)
+    draw.text((x + 300, y + 110), txt_old, fill=WHITE, anchor="lm", font=f_old)
+    
+    # Coretan Mewah pada Harga Normal
+    bbox_old = draw.textbbox((x + 300, y + 110), txt_old, font=f_old, anchor="lm")
+    draw.line([bbox_old[0]-5, y+110, bbox_old[2]+5, y+110], fill=WHITE, width=6)
+
+    # 4. Area Harga Spesial (Blok Hitam Besar & Autofit)
+    draw.text((x + 15, y + 160), "Harga Spesial", fill=WHITE, anchor="lm", font=get_font(32, False))
+    # Blok Hitam Utama
+    draw.rectangle([x + 15, y + 185, x + CELL_W - 15, y + CELL_H - 15], fill=BLACK)
+    # Label Rp di dalam blok hitam
+    draw.text((x + 35, y + 225), "Rp", fill=WHITE, anchor="mm", font=get_font(40, True))
+    
+    # 5. Autofit Angka Harga Baru (UKURAN MAKSIMAL DITINGKATKAN)
     txt_new = format_angka(h_baru)
-    curr_size = 180
+    curr_size = 210 # Ukuran maksimal proposional (Updated)
     font_new = get_font(curr_size, True)
+    
     while curr_size > 50:
         bw = draw.textbbox((0, 0), txt_new, font=font_new)[2]
-        if bw <= (CELL_W - 100): break
+        if bw <= (CELL_W - 120): break # Beri ruang dari Rp
         curr_size -= 10
         font_new = get_font(curr_size, True)
     
-    # Teks Harga di Tengah Blok Hitam
-    draw.text((x + CELL_W//2 + 20, y + 310), txt_new, fill=WHITE, anchor="mm", font=font_new)
+    # Teks Harga Baru di Tengah Blok Hitam
+    draw.text((x + CELL_W//2 + 30, y + 320), txt_new, fill=WHITE, anchor="mm", font=font_new)
 
-# --- FUNGSI PROMO & NORMAL (SEDERHANA) ---
+# --- FUNGSI PROMO & NORMAL LAINNYA ---
 def draw_promo(draw, x, y, nama, harga):
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=(255, 255, 0), outline=BLACK, width=1)
-    draw.rectangle([x, y, x + CELL_W, y + 80], fill=(200, 0, 0))
-    draw.text((x + CELL_W//2, y + 40), "PROMOSI", fill=WHITE, anchor="mm", font=get_font(50))
-    draw.text((x + CELL_W//2, y + 180), nama.upper(), fill=BLACK, anchor="mm", font=get_font(45))
-    draw.text((x + CELL_W//2, y + 330), format_angka(harga), fill=(200, 0, 0), anchor="mm", font=get_font(160))
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=(255, 240, 0), outline=BLACK, width=1)
+    draw.rectangle([x, y, x + CELL_W, y + 90], fill=RED_TEXT_HEADER)
+    draw.text((x + CELL_W//2, y + 45), "PROMOSI", fill=(255, 240, 0), anchor="mm", font=get_font(55))
+    draw.text((x + CELL_W//2, y + 175), nama.upper(), fill=BLACK, anchor="mm", font=get_font(50))
+    draw.text((x + CELL_W//2, y + 330), format_angka(harga), fill=RED_TEXT_HEADER, anchor="mm", font=get_font(160))
 
 def draw_normal(draw, x, y, nama, harga):
     draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=WHITE, outline=BLACK, width=1)
-    draw.text((x + CELL_W//2, y + 130), nama.upper(), fill=BLACK, anchor="mm", font=get_font(45))
-    draw.text((x + CELL_W//2, y + 310), format_angka(harga), fill=BLACK, anchor="mm", font=get_font(160))
+    draw.text((x + CELL_W//2, y + 130), nama.upper(), fill=BLACK, anchor="mm", font=get_font(50))
+    draw.text((x + CELL_W//2, y + 300), format_angka(harga), fill=BLACK, anchor="mm", font=get_font(160))
 
-# --- HANDLERS ---
+# --- HANDLERS BOT ---
 async def start(update: Update, context):
-    await update.message.reply_text("Silahkan pilih mode:", reply_markup=MAIN_KEYBOARD)
+    await update.message.reply_text("Silahkan pilih mode cetak Mewah di bawah:", reply_markup=MAIN_KEYBOARD)
 
 async def set_mode(update: Update, context):
     mode = update.message.text.replace('/', '')
     context.user_data['mode'] = mode
-    await update.message.reply_text(f"Mode {mode.upper()} Aktif. Kirim data (ex: 50000.35000.4)", reply_markup=ForceReply())
+    await update.message.reply_text(f"✅ Mode {mode.upper()} MEWAH Aktif.\nKirim data (Contoh: 100000.7000.2)", reply_markup=ForceReply())
 
 async def handle_message(update: Update, context):
     mode = context.user_data.get('mode')
@@ -125,7 +129,7 @@ async def handle_message(update: Update, context):
             qty = int(parts[2]) if len(parts) >= 3 else 1
             for _ in range(qty):
                 if mode == 'paket': final_items.append({'h_awal': parts[0], 'h_promo': parts[1]})
-                else: final_items.append({'nama': parts[0], 'harga': parts[1]})
+                else: final_items.append({'nama': parts[Part1], 'harga': parts[Part2]}) # Fixed Index
         except: continue
 
     if not final_items: return
