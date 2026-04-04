@@ -2,15 +2,26 @@ import os
 import io
 import math
 import logging
+from datetime import time, datetime
+import pytz
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ForceReply
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from PIL import Image, ImageDraw, ImageFont
+import asyncio
 
 # --- LOGGING ---
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
-# --- KONFIGURASI WARNA ---
+# ======================================================
+# KONFIGURASI GRUP DAN SUBTOPIK
+# ======================================================
+GROUP_CHAT_ID = -1002042735771  # ID grup Anda
+MESSAGE_THREAD_ID = 7956  # ID subtopik MENU
+
+# ======================================================
+# KONFIGURASI UKURAN DAN WARNA
+# ======================================================
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 BLUE_BG = (0, 102, 210)
@@ -18,54 +29,35 @@ RED_HEADER = (220, 0, 0)
 RED_SHADOW = (160, 0, 0)
 RED_LINE = (255, 0, 0)
 
-# --- UKURAN A4 (150 DPI - Optimal untuk cetak) ---
-# A4 = 210mm x 297mm
-# 150 DPI = 150 pixel per inch = 59 pixel per cm
-A4_W = 1240   # 210mm * 59 = 1239 ~ 1240 px
-A4_H = 1754   # 297mm * 59 = 1752 ~ 1754 px
-
-# Margin untuk cetak (agar tidak terpotong printer)
-MARGIN = 15   # pixel margin
-
-# Ukuran area cetak efektif
-PRINT_W = A4_W - (MARGIN * 2)  # 1240 - 30 = 1210 px
-PRINT_H = A4_H - (MARGIN * 2)  # 1754 - 30 = 1724 px
-
-# --- KONFIGURASI GRID ---
+# Ukuran A4 (150 DPI)
+A4_W = 1240
+A4_H = 1754
+MARGIN = 15
+PRINT_W = A4_W - (MARGIN * 2)
+PRINT_H = A4_H - (MARGIN * 2)
 COLS, ROWS = 2, 4
 ITEMS_PER_IMAGE = COLS * ROWS
-
-# Hitung ukuran cell berdasarkan area cetak
-CELL_W = (PRINT_W - (COLS - 1) * 5) // COLS  # 1210 - 5 = 1205 // 2 = 602 px
-CELL_H = (PRINT_H - (ROWS - 1) * 5) // ROWS  # 1724 - 15 = 1709 // 4 = 427 px
-
-# Ukuran total gambar (A4 full)
+CELL_W = (PRINT_W - (COLS - 1) * 5) // COLS
+CELL_H = (PRINT_H - (ROWS - 1) * 5) // ROWS
 IMG_W = A4_W
 IMG_H = A4_H
-
-# Posisi awal grid (dengan margin)
 START_X = MARGIN
 START_Y = MARGIN
-GAP = 5  # jarak antar cell
+GAP = 5
 
-print(f"📐 Konfigurasi A4 150 DPI:")
-print(f"   - Ukuran gambar: {IMG_W} x {IMG_H} px")
-print(f"   - Margin: {MARGIN} px")
-print(f"   - Cell size: {CELL_W} x {CELL_H} px")
-print(f"   - Grid: {COLS} x {ROWS} = {ITEMS_PER_IMAGE} kartu per halaman")
-
-# --- KEYBOARD ---
+# Keyboard
 MAIN_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("/promo"), KeyboardButton("/normal")],
     [KeyboardButton("/paket")]
 ], resize_keyboard=True, one_time_keyboard=False)
 
-
+# ======================================================
+# FUNGSI UTILITY
+# ======================================================
 def get_font(size, bold=True):
-    """Mencari font yang tersedia"""
+    """Mencari font yang tersedia di sistem"""
     font_files = [
         "Roboto-Bold.ttf", "Roboto-Regular.ttf",
-        "./Roboto-Bold.ttf", "./Roboto-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/System/Library/Fonts/Helvetica.ttc",
@@ -83,7 +75,6 @@ def get_font(size, bold=True):
             continue
     return ImageFont.load_default()
 
-
 def format_angka(harga):
     """Format angka dengan pemisah ribuan titik"""
     try:
@@ -95,7 +86,6 @@ def format_angka(harga):
         return f"{angka:,}".replace(",", ".")
     except:
         return str(harga)
-
 
 def fit_text_to_width(draw, text, max_width, initial_size, bold=True):
     """Menyesuaikan ukuran font agar muat dalam lebar tertentu"""
@@ -109,20 +99,41 @@ def fit_text_to_width(draw, text, max_width, initial_size, bold=True):
         size -= 4
     return get_font(16, bold), 16
 
+def get_current_date_wib():
+    """Mendapatkan tanggal sekarang dalam format Indonesia (WIB)"""
+    wib = pytz.timezone('Asia/Jakarta')
+    now = datetime.now(wib)
+    
+    # Format: 25 Desember 2024
+    # Nama bulan dalam bahasa Indonesia
+    bulan_indonesia = {
+        1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
+        5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
+        9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
+    }
+    
+    tanggal = now.day
+    bulan = bulan_indonesia[now.month]
+    tahun = now.year
+    
+    return f"{tanggal} {bulan} {tahun}"
 
+# ======================================================
+# FUNGSI GAMBAR KARTU
+# ======================================================
 def draw_paket(draw, x, y, harga_normal, harga_spesial):
     """Gambar kartu PAKET HEMAT untuk cetak A4"""
     
-    # 1. Background biru dengan outline 1px
+    # Background biru dengan outline
     draw.rectangle([x, y, x + CELL_W, y + CELL_H], 
                    fill=BLUE_BG, outline=BLACK, width=1)
     
-    # 2. Header "PAKET HEMAT" (skala lebih kecil untuk A4)
+    # Header "PAKET HEMAT"
     header_text = "PAKET HEMAT"
     header_center_x = x + CELL_W // 2
-    header_y = y + int(CELL_H * 0.12)  # 12% dari tinggi cell
+    header_y = y + int(CELL_H * 0.12)
     
-    header_font = get_font(52, bold=True)  # Lebih kecil dari sebelumnya (68)
+    header_font = get_font(52, bold=True)
     # Bayangan
     draw.text((header_center_x + 3, header_y + 3), header_text, 
               fill=RED_SHADOW, anchor="mm", font=header_font)
@@ -130,12 +141,12 @@ def draw_paket(draw, x, y, harga_normal, harga_spesial):
     draw.text((header_center_x, header_y), header_text, 
               fill=RED_HEADER, anchor="mm", font=header_font)
     
-    # 3. Label "Harga Normal"
+    # Label "Harga Normal"
     y_normal_label = y + int(CELL_H * 0.28)
     draw.text((x + 15, y_normal_label), "Harga Normal", 
               fill=WHITE, anchor="lm", font=get_font(24, bold=False))
     
-    # 4. Harga Normal dengan LATAR HITAM
+    # Harga Normal dengan latar hitam
     y_normal_value = y + int(CELL_H * 0.27)
     txt_normal = format_angka(harga_normal)
     
@@ -180,12 +191,12 @@ def draw_paket(draw, x, y, harga_normal, harga_spesial):
     draw.line([box_left + 8, line_y, box_right - 8, line_y], 
               fill=RED_LINE, width=5)
     
-    # 5. Label "Harga Spesial"
+    # Label "Harga Spesial"
     y_spesial_label = y + int(CELL_H * 0.48)
     draw.text((x + 15, y_spesial_label), "Harga Spesial", 
               fill=WHITE, anchor="lm", font=get_font(24, bold=False))
     
-    # 6. Kotak hitam untuk harga spesial
+    # Kotak hitam untuk harga spesial
     box_y = y + int(CELL_H * 0.57)
     box_h = CELL_H - int(CELL_H * 0.68)
     box_x1 = x + 12
@@ -193,18 +204,17 @@ def draw_paket(draw, x, y, harga_normal, harga_spesial):
     draw.rectangle([box_x1, box_y, box_x2, y + CELL_H - 12], 
                    fill=BLACK, outline=WHITE, width=1)
     
-    # 7. Teks "Rp" di kiri kotak hitam
+    # Teks "Rp" di kiri kotak hitam
     draw.text((box_x1 + 15, box_y + box_h // 2), "Rp", 
               fill=WHITE, anchor="lm", font=get_font(36, bold=True))
     
-    # 8. Harga Spesial
+    # Harga Spesial
     txt_spesial = format_angka(harga_spesial)
     max_width_spesial = CELL_W - 80
     
     spesial_font, _ = fit_text_to_width(draw, txt_spesial, max_width_spesial, 100, bold=True)
     draw.text((box_x2 - 15, box_y + box_h // 2), txt_spesial, 
               fill=WHITE, anchor="rm", font=spesial_font)
-
 
 def draw_promo(draw, x, y, nama, harga):
     """Kartu PROMOSI untuk cetak A4"""
@@ -225,7 +235,6 @@ def draw_promo(draw, x, y, nama, harga):
     draw.text((x + CELL_W // 2, y + int(CELL_H * 0.75)), harga_text, 
               fill=RED_HEADER, anchor="mm", font=price_font)
 
-
 def draw_normal(draw, x, y, nama, harga):
     """Kartu NORMAL untuk cetak A4"""
     draw.rectangle([x, y, x + CELL_W, y + CELL_H], 
@@ -241,7 +250,6 @@ def draw_normal(draw, x, y, nama, harga):
     price_font, _ = fit_text_to_width(draw, harga_text, CELL_W - 60, 110, bold=True)
     draw.text((x + CELL_W // 2, y + int(CELL_H * 0.7)), harga_text, 
               fill=BLACK, anchor="mm", font=price_font)
-
 
 def parse_input_paket(line):
     """Format: harga_awal.harga_promo.qty (qty opsional)"""
@@ -259,7 +267,54 @@ def parse_input_paket(line):
         'qty': min(qty, 100)
     }
 
+# ======================================================
+# FUNGSI PENGIRIMAN PESAN TERJADWAL (DENGAN TANGGAL REALTIME)
+# ======================================================
+async def send_daily_reminder(context: CallbackContext):
+    """Mengirim pesan setiap hari jam 00:02 WIB ke subtopik MENU dengan tanggal realtime"""
+    try:
+        # Ambil tanggal realtime dalam format Indonesia
+        tanggal_sekarang = get_current_date_wib()
+        
+        # Format pesan dengan tanggal otomatis
+        pesan = (
+            f"🔔 *Reminder Input Data Sales*\n\n"
+            f"Segera input sales *{tanggal_sekarang}* di link berikut:\n"
+            f"https://docs.google.com/spreadsheets/d/1-6P5CzwPQtthpYu9Pc5Q9a07nbZw06Aapmr1Xy2s6RY/edit?usp=drivesdk\n\n"
+            f"Abaikan jika sudah input. Terima kasih."
+        )
+        
+        await context.bot.send_message(
+            chat_id=GROUP_CHAT_ID,
+            message_thread_id=MESSAGE_THREAD_ID,
+            text=pesan,
+            parse_mode="Markdown"
+        )
+        logging.info(f"✅ Pesan harian terkirim ke grup {GROUP_CHAT_ID}, subtopik ID {MESSAGE_THREAD_ID} - Tanggal: {tanggal_sekarang}")
+    except Exception as e:
+        logging.error(f"❌ Gagal kirim pesan: {e}")
 
+async def start_scheduler(application: Application):
+    """Menjadwalkan pengiriman pesan setiap hari jam 00:02 WIB"""
+    # Hapus job lama jika ada
+    for job in application.job_queue.jobs():
+        if job.name == 'daily_sales_reminder':
+            job.schedule_removal()
+    
+    wib = pytz.timezone('Asia/Jakarta')
+    send_time = time(hour=0, minute=2, tzinfo=wib)
+    
+    application.job_queue.run_daily(
+        send_daily_reminder,
+        time=send_time,
+        days=tuple(range(7)),  # Setiap hari
+        name='daily_sales_reminder'
+    )
+    logging.info(f"⏰ Scheduler aktif setiap {send_time} WIB")
+
+# ======================================================
+# HANDLER BOT
+# ======================================================
 async def start(update: Update, context):
     await update.message.reply_text(
         "🎨 *Bot Cetak Harga Mewah - Format A4*\n\n"
@@ -272,25 +327,21 @@ async def start(update: Update, context):
         "📄 *Mode NORMAL*\n"
         "Format: `nama.harga`\n"
         "Contoh: `Beras Premium.75000`\n\n"
-        "✅ *Ukuran A4 (150 DPI)* - Siap cetak!\n"
-        f"📐 {COLS}x{ROWS} kartu per halaman\n"
-        f"📏 Margin {MARGIN}px untuk keamanan printer\n\n"
-        "Multiple line diperbolehkan.",
+        "✅ *Ukuran A4 (150 DPI)* - Siap cetak!\n\n"
+        "⏰ *Jadwal Reminder:* Setiap hari jam 00:02 WIB ke subtopik MENU\n"
+        "📅 *Tanggal akan otomatis menyesuaikan dengan hari pengiriman*",
         parse_mode="Markdown",
         reply_markup=MAIN_KEYBOARD
     )
-
 
 async def set_mode(update: Update, context):
     mode = update.message.text.replace('/', '')
     context.user_data['mode'] = mode
     
     await update.message.reply_text(
-        f"✅ Mode {mode.upper()} aktif - Ukuran A4 siap cetak!\n\n"
-        f"Kirim data sekarang (pisah dengan titik .):",
+        f"✅ Mode {mode.upper()} aktif - Kirim data sekarang:",
         reply_markup=ForceReply()
     )
-
 
 async def handle_message(update: Update, context):
     mode = context.user_data.get('mode')
@@ -355,9 +406,6 @@ async def handle_message(update: Update, context):
         img = Image.new('RGB', (IMG_W, IMG_H), color=WHITE)
         draw = ImageDraw.Draw(img)
         
-        # Gambar garis bantu margin (opsional, untuk debugging)
-        # draw.rectangle([MARGIN, MARGIN, IMG_W-MARGIN, IMG_H-MARGIN], outline=(200,200,200), width=1)
-        
         for idx in range(ITEMS_PER_IMAGE):
             row = idx // COLS
             col = idx % COLS
@@ -384,27 +432,41 @@ async def handle_message(update: Update, context):
     context.user_data['mode'] = None
     await update.message.reply_text("✅ Selesai! Gambar sudah siap cetak di kertas A4.")
 
-
+# ======================================================
+# MAIN FUNCTION
+# ======================================================
 def main():
     if not TOKEN:
         print("❌ ERROR: TELEGRAM_TOKEN tidak ditemukan!")
         return
     
-    print("🤖 Bot starting with A4 format (150 DPI)...")
-    print(f"   - Image size: {IMG_W} x {IMG_H} px")
-    print(f"   - Cell size: {CELL_W} x {CELL_H} px")
+    print("=" * 50)
+    print("🤖 BOT CETAK HARGA + REMINDER HARIAN")
+    print("=" * 50)
+    print(f"📱 Group ID: {GROUP_CHAT_ID}")
+    print(f"📌 Subtopik MENU ID: {MESSAGE_THREAD_ID}")
+    print(f"⏰ Jadwal: Setiap hari jam 00:02 WIB")
+    print(f"📐 Ukuran: A4 (150 DPI) - {IMG_W}x{IMG_H} px")
+    print(f"📅 Tanggal akan otomatis menyesuaikan dengan hari pengiriman")
+    print("=" * 50)
     
-    app = Application.builder().token(TOKEN).build()
+    # Buat aplikasi bot
+    application = Application.builder().token(TOKEN).build()
     
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("promo", set_mode))
-    app.add_handler(CommandHandler("normal", set_mode))
-    app.add_handler(CommandHandler("paket", set_mode))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Tambahkan handler
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("promo", set_mode))
+    application.add_handler(CommandHandler("normal", set_mode))
+    application.add_handler(CommandHandler("paket", set_mode))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("✅ Bot is running...")
-    app.run_polling()
-
+    # Jalankan scheduler
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.create_task(start_scheduler(application))
+    
+    print("✅ Bot berjalan di Railway...")
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
