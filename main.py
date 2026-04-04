@@ -82,7 +82,7 @@ def fit_text_to_width(draw, text, max_width, initial_size, bold=True):
 
 
 def draw_paket(draw, x, y, harga_normal, harga_spesial):
-    """Gambar kartu PAKET HEMAT dengan alignment kanan untuk harga normal"""
+    """Gambar kartu PAKET HEMAT dengan latar hitam untuk harga normal"""
     
     # 1. Background biru
     draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=BLUE_BG)
@@ -105,50 +105,62 @@ def draw_paket(draw, x, y, harga_normal, harga_spesial):
     draw.text((x + 25, y_normal_label), "Harga Normal", 
               fill=WHITE, anchor="lm", font=get_font(30, bold=False))
     
-    # 4. Harga Normal (alignment KANAN)
-    y_normal_value = y + 125
+    # 4. Harga Normal dengan LATAR HITAM (alignment KANAN)
+    y_normal_value = y + 120
     txt_normal = format_angka(harga_normal)
-    max_width_normal = CELL_W - 160  # Ruang untuk teks
+    max_width_normal = CELL_W - 160
     
     # Auto-fit font
-    normal_font, _ = fit_text_to_width(draw, txt_normal, max_width_normal, 60, bold=True)
+    normal_font, _ = fit_text_to_width(draw, txt_normal, max_width_normal, 55, bold=True)
     
-    # Posisi di kanan (x = CELL_W - margin)
-    margin_right = 30
-    normal_x = x + CELL_W - margin_right
+    # Hitung dimensi teks untuk latar hitam
+    rp_font = get_font(34, bold=True)
+    rp_text = "Rp"
+    rp_bbox = draw.textbbox((0, 0), rp_text, font=rp_font)
+    rp_width = rp_bbox[2] - rp_bbox[0]
     
-    # Gambar teks harga normal (anchor="rm" = kanan tengah)
-    draw.text((normal_x, y_normal_value), txt_normal, 
-              fill=WHITE, anchor="rm", font=normal_font)
-    
-    # Gambar "Rp" di sebelah kiri angka (sedikit geser ke kiri)
-    rp_font = get_font(32, bold=True)
-    # Hitung lebar teks harga untuk posisi Rp yang tepat
     normal_bbox = draw.textbbox((0, 0), txt_normal, font=normal_font)
     normal_width = normal_bbox[2] - normal_bbox[0]
-    rp_x = normal_x - normal_width - 8
-    draw.text((rp_x, y_normal_value), "Rp", 
-              fill=WHITE, anchor="rm", font=rp_font)
     
-    # Coretan garis putih (lebar mengikuti teks)
-    line_y = y_normal_value + 8
-    draw.line([rp_x - 5, line_y, normal_x + 5, line_y], fill=WHITE, width=5)
+    # Total lebar (Rp + spasi + angka)
+    total_width = rp_width + 8 + normal_width
+    total_height = max(rp_bbox[3] - rp_bbox[1], normal_bbox[3] - normal_bbox[1]) + 20
+    
+    # Posisi kanan untuk latar hitam
+    margin_right = 25
+    box_right = x + CELL_W - margin_right
+    box_left = box_right - total_width - 10
+    
+    # Gambar latar hitam
+    box_top = y_normal_value - 12
+    box_bottom = y_normal_value + total_height - 8
+    draw.rectangle([box_left, box_top, box_right, box_bottom], fill=BLACK)
+    
+    # Posisi teks di dalam kotak hitam (rata kanan)
+    text_y = y_normal_value + 5
+    
+    # Gambar "Rp" (rata kanan ke angka)
+    rp_x = box_right - normal_width - 8
+    draw.text((rp_x, text_y), rp_text, fill=WHITE, anchor="rm", font=rp_font)
+    
+    # Gambar angka harga normal (rata kanan)
+    draw.text((box_right, text_y), txt_normal, fill=WHITE, anchor="rm", font=normal_font)
     
     # 5. Label "Harga Spesial" (kiri)
-    y_spesial_label = y + 195
+    y_spesial_label = y + 210
     draw.text((x + 25, y_spesial_label), "Harga Spesial", 
               fill=WHITE, anchor="lm", font=get_font(30, bold=False))
     
-    # 6. Kotak hitam untuk harga spesial
-    box_y = y + 235
-    box_h = CELL_H - 280
+    # 6. Kotak hitam untuk harga spesial (lebih besar)
+    box_y = y + 250
+    box_h = CELL_H - 295
     box_x1 = x + 20
     box_x2 = x + CELL_W - 20
     draw.rectangle([box_x1, box_y, box_x2, y + CELL_H - 18], fill=BLACK)
     
     # 7. Teks "Rp" di kiri kotak hitam
     draw.text((box_x1 + 25, box_y + box_h // 2), "Rp", 
-              fill=WHITE, anchor="lm", font=get_font(45, bold=True))
+              fill=WHITE, anchor="lm", font=get_font(48, bold=True))
     
     # 8. Harga Spesial (alignment KANAN dalam kotak hitam)
     txt_spesial = format_angka(harga_spesial)
