@@ -12,18 +12,18 @@ TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
 # --- KONFIGURASI WARNA ---
 YELLOW = (255, 230, 0)
-RED = (255, 0, 0)          
+RED_PURE = (255, 0, 0)      # Untuk coretan
+RED_DEEP = (180, 0, 0)      # Merah Pekat untuk teks "PAKET HEMAT"
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 BRIGHT_BLUE = (0, 80, 180) 
-PAKET_RED = (255, 80, 80)   
 
 # --- UKURAN GRID & CELL ---
 COLS, ROWS = 2, 4
 ITEMS_PER_IMAGE = COLS * ROWS
 CELL_W, CELL_H = 600, 450
 BORDER_GRID = 15
-LINE_THIN = 3  # Ketebalan garis pembatas yang tipis dan seragam
+LINE_ULTRA_THIN = 1  # Batas gambar dibuat 1 pixel
 IMG_W = COLS * CELL_W + (COLS + 1) * BORDER_GRID
 IMG_H = ROWS * CELL_H + (ROWS + 1) * BORDER_GRID
 
@@ -31,7 +31,7 @@ IMG_H = ROWS * CELL_H + (ROWS + 1) * BORDER_GRID
 MAIN_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("/promo"), KeyboardButton("/normal")],
     [KeyboardButton("/paket")]
-], resize_keyboard=True, one_time_keyboard=False) # one_time_keyboard=False agar tetap ada
+], resize_keyboard=True, one_time_keyboard=False)
 
 def get_font(size, bold=True):
     font_file = "Roboto-Bold.ttf" if bold else "Roboto-Regular.ttf"
@@ -47,30 +47,28 @@ def format_angka(harga):
         return f"{int(angka_str):,}".replace(",", ".")
     except: return str(harga)
 
-# --- FUNGSI DRAW: PAKET (HARGA NORMAL DIPERKECIL) ---
+# --- FUNGSI DRAW: PAKET ---
 def draw_paket(draw, x, y, h_lama, h_baru):
-    # Background & Outline Tipis
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=BRIGHT_BLUE, outline=WHITE, width=LINE_THIN)
+    # Background & Outline 1 Pixel
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=BRIGHT_BLUE, outline=WHITE, width=LINE_ULTRA_THIN)
     
-    # Header
-    draw.text((x + CELL_W//2, y + 55), "PAKET HEMAT", fill=PAKET_RED, anchor="mm", font=get_font(60))
+    # Header PAKET HEMAT (Merah Pekat)
+    draw.text((x + CELL_W//2, y + 55), "PAKET HEMAT", fill=RED_DEEP, anchor="mm", font=get_font(60))
     
-    # Harga Normal (Lama) - DIPERKECIL
+    # Harga Normal (Lama)
     txt_lama = format_angka(h_lama)
-    size_lama = 80 # Ukuran diperkecil sesuai request
-    f_old = get_font(size_lama, True)
+    f_old = get_font(80, True)
     y_lama = y + 150
     draw.text((x + CELL_W//2, y_lama), txt_lama, fill=WHITE, anchor="mm", font=f_old)
     
-    # Coretan Merah
+    # Coretan
     bbox = draw.textbbox((0, 0), txt_lama, font=f_old)
     tw = bbox[2] - bbox[0]
-    draw.line([x + (CELL_W-tw)//2 - 5, y_lama, x + (CELL_W+tw)//2 + 5, y_lama], fill=RED, width=8)
+    draw.line([x + (CELL_W-tw)//2 - 5, y_lama, x + (CELL_W+tw)//2 + 5, y_lama], fill=RED_PURE, width=8)
 
     # Label & Harga Baru
     draw.text((x + CELL_W//2, y + 245), "HARGA SPESIAL", fill=YELLOW, anchor="mm", font=get_font(45))
     
-    # Harga Promo Auto-Size
     txt_promo = format_angka(h_baru)
     curr_size = 175
     font_p = get_font(curr_size, True)
@@ -81,22 +79,22 @@ def draw_paket(draw, x, y, h_lama, h_baru):
         font_p = get_font(curr_size, True)
     draw.text((x + CELL_W//2, y + 355), txt_promo, fill=WHITE, anchor="mm", font=font_p)
 
-# --- FUNGSI DRAW: PROMO & NORMAL (OUTLINE TIPIS) ---
+# --- FUNGSI DRAW: PROMO & NORMAL ---
 def draw_promo(draw, x, y, nama, harga):
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=YELLOW, outline=BLACK, width=LINE_THIN)
-    draw.rectangle([x, y, x + CELL_W, y + 90], fill=RED)
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=YELLOW, outline=BLACK, width=LINE_ULTRA_THIN)
+    draw.rectangle([x, y, x + CELL_W, y + 90], fill=RED_PURE)
     draw.text((x + CELL_W//2, y + 45), "PROMOSI", fill=YELLOW, anchor="mm", font=get_font(55))
     draw.text((x + CELL_W//2, y + 175), nama.upper(), fill=BLACK, anchor="mm", font=get_font(50))
-    draw.text((x + CELL_W//2, y + 340), format_angka(harga), fill=RED, anchor="mm", font=get_font(160))
+    draw.text((x + CELL_W//2, y + 340), format_angka(harga), fill=RED_PURE, anchor="mm", font=get_font(160))
 
 def draw_normal(draw, x, y, nama, harga):
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=WHITE, outline=(200, 200, 200), width=LINE_THIN)
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=WHITE, outline=(200, 200, 200), width=LINE_ULTRA_THIN)
     draw.text((x + CELL_W//2, y + 130), nama.upper(), fill=BLACK, anchor="mm", font=get_font(50))
     draw.text((x + CELL_W//2, y + 310), format_angka(harga), fill=BLACK, anchor="mm", font=get_font(160))
 
-# --- BOT HANDLERS ---
+# --- HANDLER BOT ---
 async def start(update: Update, context):
-    await update.message.reply_text("Silahkan pilih mode cetak di bawah:", reply_markup=MAIN_KEYBOARD)
+    await update.message.reply_text("Silahkan pilih mode cetak:", reply_markup=MAIN_KEYBOARD)
 
 async def set_mode(update: Update, context):
     mode = update.message.text.replace('/', '')
@@ -105,9 +103,7 @@ async def set_mode(update: Update, context):
 
 async def handle_message(update: Update, context):
     mode = context.user_data.get('mode')
-    if not mode:
-        await update.message.reply_text("Pilih mode dulu:", reply_markup=MAIN_KEYBOARD)
-        return
+    if not mode: return
 
     lines = update.message.text.strip().split('\n')
     final_items = []
