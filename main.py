@@ -8,6 +8,7 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ForceReply
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from PIL import Image, ImageDraw, ImageFont
 import asyncio
+from datetime import datetime as dt
 
 # --- LOGGING ---
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -45,7 +46,7 @@ START_X = MARGIN
 START_Y = MARGIN
 GAP = 5
 
-# Keyboard
+# Keyboard 3 tombol utama
 MAIN_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("/promo"), KeyboardButton("/normal")],
     [KeyboardButton("/paket")]
@@ -55,7 +56,6 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup([
 # FUNGSI UTILITY
 # ======================================================
 def get_font(size, bold=True):
-    """Mencari font yang tersedia di sistem"""
     font_files = [
         "Roboto-Bold.ttf", "Roboto-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -64,7 +64,6 @@ def get_font(size, bold=True):
         "C:\\Windows\\Fonts\\Arial.ttf",
         "C:\\Windows\\Fonts\\Arialbd.ttf",
     ]
-    
     for font_file in font_files:
         try:
             if bold and "Bold" not in font_file and "bd" not in font_file.lower():
@@ -76,7 +75,6 @@ def get_font(size, bold=True):
     return ImageFont.load_default()
 
 def format_angka(harga):
-    """Format angka dengan pemisah ribuan titik"""
     try:
         if isinstance(harga, (int, float)):
             angka = int(harga)
@@ -88,7 +86,6 @@ def format_angka(harga):
         return str(harga)
 
 def fit_text_to_width(draw, text, max_width, initial_size, bold=True):
-    """Menyesuaikan ukuran font agar muat dalam lebar tertentu"""
     size = initial_size
     while size > 16:
         font = get_font(size, bold)
@@ -100,217 +97,212 @@ def fit_text_to_width(draw, text, max_width, initial_size, bold=True):
     return get_font(16, bold), 16
 
 def get_current_date_wib():
-    """Mendapatkan tanggal sekarang dalam format Indonesia (WIB)"""
     wib = pytz.timezone('Asia/Jakarta')
     now = datetime.now(wib)
-    
-    # Format: 25 Desember 2024
-    # Nama bulan dalam bahasa Indonesia
     bulan_indonesia = {
         1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
         5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
         9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
     }
-    
-    tanggal = now.day
-    bulan = bulan_indonesia[now.month]
-    tahun = now.year
-    
-    return f"{tanggal} {bulan} {tahun}"
+    return f"{now.day} {bulan_indonesia[now.month]} {now.year}"
+
+def is_date_match(today, target_dates):
+    """Cek apakah tanggal hari ini termasuk dalam target_dates"""
+    return today.day in target_dates
 
 # ======================================================
 # FUNGSI GAMBAR KARTU
 # ======================================================
 def draw_paket(draw, x, y, harga_normal, harga_spesial):
-    """Gambar kartu PAKET HEMAT untuk cetak A4"""
-    
-    # Background biru dengan outline
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], 
-                   fill=BLUE_BG, outline=BLACK, width=1)
-    
-    # Header "PAKET HEMAT"
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=BLUE_BG, outline=BLACK, width=1)
     header_text = "PAKET HEMAT"
     header_center_x = x + CELL_W // 2
     header_y = y + int(CELL_H * 0.12)
-    
     header_font = get_font(52, bold=True)
-    # Bayangan
-    draw.text((header_center_x + 3, header_y + 3), header_text, 
-              fill=RED_SHADOW, anchor="mm", font=header_font)
-    # Teks utama
-    draw.text((header_center_x, header_y), header_text, 
-              fill=RED_HEADER, anchor="mm", font=header_font)
+    draw.text((header_center_x + 3, header_y + 3), header_text, fill=RED_SHADOW, anchor="mm", font=header_font)
+    draw.text((header_center_x, header_y), header_text, fill=RED_HEADER, anchor="mm", font=header_font)
     
-    # Label "Harga Normal"
     y_normal_label = y + int(CELL_H * 0.28)
-    draw.text((x + 15, y_normal_label), "Harga Normal", 
-              fill=WHITE, anchor="lm", font=get_font(24, bold=False))
+    draw.text((x + 15, y_normal_label), "Harga Normal", fill=WHITE, anchor="lm", font=get_font(24, bold=False))
     
-    # Harga Normal dengan latar hitam
     y_normal_value = y + int(CELL_H * 0.27)
     txt_normal = format_angka(harga_normal)
-    
     normal_font = get_font(38, bold=True)
     rp_font = get_font(30, bold=True)
-    
     rp_text = "Rp"
     rp_bbox = draw.textbbox((0, 0), rp_text, font=rp_font)
     rp_width = rp_bbox[2] - rp_bbox[0]
-    
     normal_bbox = draw.textbbox((0, 0), txt_normal, font=normal_font)
     normal_width = normal_bbox[2] - normal_bbox[0]
-    
     spacing = 8
     total_width = rp_width + spacing + normal_width
     total_height = max(rp_bbox[3] - rp_bbox[1], normal_bbox[3] - normal_bbox[1]) + 16
-    
     label_right = x + 140
     available_width = CELL_W - (label_right - x) - 20
     box_width = min(total_width + 30, available_width)
-    
     box_center_x = x + CELL_W - 25 - (box_width // 2)
     box_left = box_center_x - (box_width // 2)
     box_right = box_left + box_width
-    
     box_top = y_normal_value - 10
     box_bottom = y_normal_value + total_height - 6
-    
-    draw.rectangle([box_left, box_top, box_right, box_bottom], 
-                   fill=BLACK, outline=WHITE, width=1)
-    
+    draw.rectangle([box_left, box_top, box_right, box_bottom], fill=BLACK, outline=WHITE, width=1)
     text_center_x = (box_left + box_right) // 2
     text_y = y_normal_value + 4
-    
     rp_x = text_center_x - (normal_width // 2) - spacing - (rp_width // 2)
     draw.text((rp_x, text_y), rp_text, fill=WHITE, anchor="rm", font=rp_font)
-    draw.text((text_center_x + (normal_width // 2), text_y), txt_normal, 
-              fill=WHITE, anchor="rm", font=normal_font)
-    
-    # Coretan garis merah
+    draw.text((text_center_x + (normal_width // 2), text_y), txt_normal, fill=WHITE, anchor="rm", font=normal_font)
     line_y = text_y - 6
-    draw.line([box_left + 8, line_y, box_right - 8, line_y], 
-              fill=RED_LINE, width=5)
+    draw.line([box_left + 8, line_y, box_right - 8, line_y], fill=RED_LINE, width=5)
     
-    # Label "Harga Spesial"
     y_spesial_label = y + int(CELL_H * 0.48)
-    draw.text((x + 15, y_spesial_label), "Harga Spesial", 
-              fill=WHITE, anchor="lm", font=get_font(24, bold=False))
-    
-    # Kotak hitam untuk harga spesial
+    draw.text((x + 15, y_spesial_label), "Harga Spesial", fill=WHITE, anchor="lm", font=get_font(24, bold=False))
     box_y = y + int(CELL_H * 0.57)
     box_h = CELL_H - int(CELL_H * 0.68)
     box_x1 = x + 12
     box_x2 = x + CELL_W - 12
-    draw.rectangle([box_x1, box_y, box_x2, y + CELL_H - 12], 
-                   fill=BLACK, outline=WHITE, width=1)
-    
-    # Teks "Rp" di kiri kotak hitam
-    draw.text((box_x1 + 15, box_y + box_h // 2), "Rp", 
-              fill=WHITE, anchor="lm", font=get_font(36, bold=True))
-    
-    # Harga Spesial
+    draw.rectangle([box_x1, box_y, box_x2, y + CELL_H - 12], fill=BLACK, outline=WHITE, width=1)
+    draw.text((box_x1 + 15, box_y + box_h // 2), "Rp", fill=WHITE, anchor="lm", font=get_font(36, bold=True))
     txt_spesial = format_angka(harga_spesial)
     max_width_spesial = CELL_W - 80
-    
     spesial_font, _ = fit_text_to_width(draw, txt_spesial, max_width_spesial, 100, bold=True)
-    draw.text((box_x2 - 15, box_y + box_h // 2), txt_spesial, 
-              fill=WHITE, anchor="rm", font=spesial_font)
+    draw.text((box_x2 - 15, box_y + box_h // 2), txt_spesial, fill=WHITE, anchor="rm", font=spesial_font)
 
 def draw_promo(draw, x, y, nama, harga):
-    """Kartu PROMOSI untuk cetak A4"""
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], 
-                   fill=(255, 240, 0), outline=BLACK, width=1)
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=(255, 240, 0), outline=BLACK, width=1)
     draw.rectangle([x, y, x + CELL_W, y + int(CELL_H * 0.2)], fill=RED_HEADER)
-    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.12)), "PROMOSI", 
-              fill=(255, 240, 0), anchor="mm", font=get_font(44, bold=True))
-    
+    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.12)), "PROMOSI", fill=(255, 240, 0), anchor="mm", font=get_font(44, bold=True))
     nama_text = nama.upper()
     max_width = CELL_W - 40
     name_font, _ = fit_text_to_width(draw, nama_text, max_width, 40, bold=True)
-    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.42)), nama_text, 
-              fill=BLACK, anchor="mm", font=name_font)
-    
+    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.42)), nama_text, fill=BLACK, anchor="mm", font=name_font)
     harga_text = format_angka(harga)
     price_font, _ = fit_text_to_width(draw, harga_text, CELL_W - 60, 100, bold=True)
-    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.75)), harga_text, 
-              fill=RED_HEADER, anchor="mm", font=price_font)
+    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.75)), harga_text, fill=RED_HEADER, anchor="mm", font=price_font)
 
 def draw_normal(draw, x, y, nama, harga):
-    """Kartu NORMAL untuk cetak A4"""
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], 
-                   fill=WHITE, outline=BLACK, width=1)
-    
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=WHITE, outline=BLACK, width=1)
     nama_text = nama.upper()
     max_width = CELL_W - 40
     name_font, _ = fit_text_to_width(draw, nama_text, max_width, 38, bold=True)
-    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.35)), nama_text, 
-              fill=BLACK, anchor="mm", font=name_font)
-    
+    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.35)), nama_text, fill=BLACK, anchor="mm", font=name_font)
     harga_text = format_angka(harga)
     price_font, _ = fit_text_to_width(draw, harga_text, CELL_W - 60, 110, bold=True)
-    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.7)), harga_text, 
-              fill=BLACK, anchor="mm", font=price_font)
+    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.7)), harga_text, fill=BLACK, anchor="mm", font=price_font)
 
 def parse_input_paket(line):
-    """Format: harga_awal.harga_promo.qty (qty opsional)"""
     parts = line.strip().split('.')
     if len(parts) < 2:
         return None
-    
     harga_awal = parts[0].strip()
     harga_promo = parts[1].strip()
     qty = int(parts[2]) if len(parts) >= 3 and parts[2].strip().isdigit() else 1
-    
-    return {
-        'harga_normal': harga_awal,
-        'harga_spesial': harga_promo,
-        'qty': min(qty, 100)
-    }
+    return {'harga_normal': harga_awal, 'harga_spesial': harga_promo, 'qty': min(qty, 100)}
 
 # ======================================================
-# FUNGSI PENGIRIMAN PESAN TERJADWAL (DENGAN TANGGAL REALTIME)
+# REMINDER 1: HARIAN (Jam 00:02 WIB)
 # ======================================================
 async def send_daily_reminder(context: CallbackContext):
-    """Mengirim pesan setiap hari jam 00:02 WIB ke subtopik MENU dengan tanggal realtime"""
+    """Mengirim pesan setiap hari jam 00:02 WIB ke subtopik MENU"""
     try:
-        # Ambil tanggal realtime dalam format Indonesia
         tanggal_sekarang = get_current_date_wib()
-        
-        # Format pesan dengan tanggal otomatis
         pesan = (
             f"🔔 *Reminder Input Data Sales*\n\n"
             f"Segera input sales *{tanggal_sekarang}* di link berikut:\n"
             f"https://docs.google.com/spreadsheets/d/1-6P5CzwPQtthpYu9Pc5Q9a07nbZw06Aapmr1Xy2s6RY/edit?usp=drivesdk\n\n"
             f"Abaikan jika sudah input. Terima kasih."
         )
-        
         await context.bot.send_message(
             chat_id=GROUP_CHAT_ID,
             message_thread_id=MESSAGE_THREAD_ID,
             text=pesan,
             parse_mode="Markdown"
         )
-        logging.info(f"✅ Pesan harian terkirim ke grup {GROUP_CHAT_ID}, subtopik ID {MESSAGE_THREAD_ID} - Tanggal: {tanggal_sekarang}")
+        logging.info(f"✅ Reminder HARIAN terkirim ke grup {GROUP_CHAT_ID}")
     except Exception as e:
-        logging.error(f"❌ Gagal kirim pesan: {e}")
+        logging.error(f"❌ Gagal kirim reminder harian: {e}")
 
-async def start_scheduler(application: Application):
-    """Menjadwalkan pengiriman pesan setiap hari jam 00:02 WIB"""
+# ======================================================
+# REMINDER 2: BULANAN (Tanggal 1 dan 16, Jam 08:00 WIB)
+# ======================================================
+async def send_monthly_reminder(context: CallbackContext):
+    """Mengirim pesan setiap tanggal 1 dan 16 jam 08:00 WIB"""
+    try:
+        wib = pytz.timezone('Asia/Jakarta')
+        now = datetime.now(wib)
+        tanggal = now.day
+        
+        pesan = (
+            f"📋 *Reminder Cetak & Retur*\n\n"
+            f"Segera cetak Tag N, R, F dan Non Category\n"
+            f"dan segera lakukan retur.\n\n"
+            f"📅 *Tanggal: {get_current_date_wib()}*\n"
+            f"⏰ *Batas: Hari ini juga!*"
+        )
+        await context.bot.send_message(
+            chat_id=GROUP_CHAT_ID,
+            message_thread_id=MESSAGE_THREAD_ID,
+            text=pesan,
+            parse_mode="Markdown"
+        )
+        logging.info(f"✅ Reminder BULANAN (tgl {tanggal}) terkirim ke grup {GROUP_CHAT_ID}")
+    except Exception as e:
+        logging.error(f"❌ Gagal kirim reminder bulanan: {e}")
+
+# ======================================================
+# FUNGSI SCHEDULER UNTUK REMINDER BULANAN
+# ======================================================
+async def check_monthly_reminder(context: CallbackContext):
+    """
+    Fungsi ini berjalan setiap jam untuk mengecek 
+    apakah hari ini tanggal 1 atau 16, dan jam 08:00
+    """
+    wib = pytz.timezone('Asia/Jakarta')
+    now = datetime.now(wib)
+    
+    # Cek apakah tanggal hari ini 1 atau 16
+    if now.day in [1, 16]:
+        # Cek apakah jam 08:00 (antara 08:00:00 sampai 08:01:00)
+        if now.hour == 8 and now.minute < 5:  # Tolerance 5 menit
+            await send_monthly_reminder(context)
+
+async def start_schedulers(application: Application):
+    """
+    Menjadwalkan kedua reminder:
+    1. Reminder harian: setiap jam 00:02 WIB
+    2. Reminder bulanan: cek setiap jam 08:00 untuk tanggal 1 dan 16
+    """
+    wib = pytz.timezone('Asia/Jakarta')
+    
+    # ========== REMINDER 1: HARIAN ==========
     # Hapus job lama jika ada
     for job in application.job_queue.jobs():
         if job.name == 'daily_sales_reminder':
             job.schedule_removal()
     
-    wib = pytz.timezone('Asia/Jakarta')
-    send_time = time(hour=0, minute=2, tzinfo=wib)
-    
+    send_time_daily = time(hour=0, minute=2, tzinfo=wib)
     application.job_queue.run_daily(
         send_daily_reminder,
-        time=send_time,
-        days=tuple(range(7)),  # Setiap hari
+        time=send_time_daily,
+        days=tuple(range(7)),
         name='daily_sales_reminder'
     )
-    logging.info(f"⏰ Scheduler aktif setiap {send_time} WIB")
+    logging.info(f"⏰ Reminder HARIAN aktif setiap {send_time_daily} WIB")
+    
+    # ========== REMINDER 2: BULANAN (Cek setiap jam 08:00) ==========
+    # Hapus job lama jika ada
+    for job in application.job_queue.jobs():
+        if job.name == 'monthly_check_reminder':
+            job.schedule_removal()
+    
+    # Cek setiap jam 08:00 untuk mengetahui apakah tanggal 1 atau 16
+    send_time_monthly = time(hour=8, minute=0, tzinfo=wib)
+    application.job_queue.run_daily(
+        check_monthly_reminder,
+        time=send_time_monthly,
+        days=tuple(range(7)),
+        name='monthly_check_reminder'
+    )
+    logging.info(f"⏰ Reminder BULANAN aktif setiap {send_time_monthly} WIB (cek tgl 1 & 16)")
 
 # ======================================================
 # HANDLER BOT
@@ -328,8 +320,9 @@ async def start(update: Update, context):
         "Format: `nama.harga`\n"
         "Contoh: `Beras Premium.75000`\n\n"
         "✅ *Ukuran A4 (150 DPI)* - Siap cetak!\n\n"
-        "⏰ *Jadwal Reminder:* Setiap hari jam 00:02 WIB ke subtopik MENU\n"
-        "📅 *Tanggal akan otomatis menyesuaikan dengan hari pengiriman*",
+        "⏰ *Reminder Otomatis:*\n"
+        "• 📊 Setiap hari jam 00:02 WIB (Input Sales)\n"
+        "• 📋 Tanggal 1 & 16 setiap bulan jam 08:00 WIB (Cetak Tag & Retur)",
         parse_mode="Markdown",
         reply_markup=MAIN_KEYBOARD
     )
@@ -337,7 +330,6 @@ async def start(update: Update, context):
 async def set_mode(update: Update, context):
     mode = update.message.text.replace('/', '')
     context.user_data['mode'] = mode
-    
     await update.message.reply_text(
         f"✅ Mode {mode.upper()} aktif - Kirim data sekarang:",
         reply_markup=ForceReply()
@@ -402,7 +394,6 @@ async def handle_message(update: Update, context):
         start_idx = img_idx * ITEMS_PER_IMAGE
         batch = all_items[start_idx:start_idx + ITEMS_PER_IMAGE]
         
-        # Buat gambar ukuran A4
         img = Image.new('RGB', (IMG_W, IMG_H), color=WHITE)
         draw = ImageDraw.Draw(img)
         
@@ -421,7 +412,6 @@ async def handle_message(update: Update, context):
                 else:
                     draw_normal(draw, x_pos, y_pos, item['nama'], item['harga'])
         
-        # Simpan dengan kualitas tinggi untuk cetak
         bio = io.BytesIO()
         img.save(bio, format='PNG', dpi=(150, 150))
         bio.seek(0)
@@ -441,31 +431,32 @@ def main():
         return
     
     print("=" * 50)
-    print("🤖 BOT CETAK HARGA + REMINDER HARIAN")
+    print("🤖 BOT CETAK HARGA + 2 REMINDER OTOMATIS")
     print("=" * 50)
     print(f"📱 Group ID: {GROUP_CHAT_ID}")
     print(f"📌 Subtopik MENU ID: {MESSAGE_THREAD_ID}")
-    print(f"⏰ Jadwal: Setiap hari jam 00:02 WIB")
+    print(f"⏰ Reminder 1: Setiap hari jam 00:02 WIB (Input Sales)")
+    print(f"⏰ Reminder 2: Tanggal 1 & 16 jam 08:00 WIB (Cetak Tag & Retur)")
     print(f"📐 Ukuran: A4 (150 DPI) - {IMG_W}x{IMG_H} px")
-    print(f"📅 Tanggal akan otomatis menyesuaikan dengan hari pengiriman")
     print("=" * 50)
     
-    # Buat aplikasi bot
     application = Application.builder().token(TOKEN).build()
     
-    # Tambahkan handler
+    # Handler untuk command utama
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("promo", set_mode))
     application.add_handler(CommandHandler("normal", set_mode))
     application.add_handler(CommandHandler("paket", set_mode))
+    
+    # Handler untuk pesan biasa
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Jalankan scheduler
+    # Jalankan kedua scheduler
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.create_task(start_scheduler(application))
+    loop.create_task(start_schedulers(application))
     
-    print("✅ Bot berjalan di Railway...")
+    print("✅ Bot berjalan dengan 2 reminder otomatis...")
     application.run_polling()
 
 if __name__ == "__main__":
