@@ -13,11 +13,9 @@ TOKEN = os.environ.get("TELEGRAM_TOKEN")
 # --- KONFIGURASI WARNA ---
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-BLUE_BG = (0, 102, 210)      # Biru cerah
-RED_HEADER = (220, 0, 0)     # Merah header
-RED_SHADOW = (160, 0, 0)     # Bayangan header
-GREEN_SPECIAL = (0, 150, 0)  # Hijau untuk harga spesial (alternatif)
-YELLOW_BG = (255, 240, 0)    # Kuning promo
+BLUE_BG = (0, 102, 210)
+RED_HEADER = (220, 0, 0)
+RED_SHADOW = (160, 0, 0)
 
 # --- UKURAN GRID ---
 COLS, ROWS = 2, 4
@@ -41,14 +39,15 @@ def get_font(size, bold=True):
         "./Roboto-Bold.ttf", "./Roboto-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/System/Library/Fonts/Helvetica.ttc",  # Mac
-        "C:\\Windows\\Fonts\\Arial.ttf",        # Windows
+        "/System/Library/Fonts/Helvetica.ttc",
+        "C:\\Windows\\Fonts\\Arial.ttf",
+        "C:\\Windows\\Fonts\\Arialbd.ttf",
     ]
     
     for font_file in font_files:
         try:
-            if bold and "Bold" not in font_file and "DejaVuSans-Bold" not in font_file:
-                if "Regular" in font_file:
+            if bold and "Bold" not in font_file and "bd" not in font_file.lower():
+                if "Regular" in font_file or "Arial.ttf" == font_file:
                     continue
             return ImageFont.truetype(font_file, size)
         except:
@@ -59,140 +58,187 @@ def get_font(size, bold=True):
 def format_angka(harga):
     """Format angka dengan pemisah ribuan titik"""
     try:
-        # Bersihkan input
         if isinstance(harga, (int, float)):
             angka = int(harga)
         else:
             angka_str = ''.join(filter(str.isdigit, str(harga)))
             angka = int(angka_str) if angka_str else 0
-        
         return f"{angka:,}".replace(",", ".")
     except:
         return str(harga)
 
 
+def fit_text_to_width(draw, text, max_width, initial_size, bold=True):
+    """Menyesuaikan ukuran font agar muat dalam lebar tertentu"""
+    size = initial_size
+    while size > 30:
+        font = get_font(size, bold)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        if text_width <= max_width:
+            return font, size
+        size -= 5
+    return get_font(30, bold), 30
+
+
 def draw_paket(draw, x, y, harga_normal, harga_spesial):
-    """Gambar kartu PAKET HEMAT sesuai contoh"""
+    """Gambar kartu PAKET HEMAT dengan auto-fit font"""
     
     # 1. Background biru
     draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=BLUE_BG)
     
-    # 2. Header "PAKET HEMAT" dengan efek bayangan
+    # 2. Header "PAKET HEMAT"
     header_text = "PAKET HEMAT"
-    header_font = get_font(68, bold=True)
     header_center_x = x + CELL_W // 2
-    header_y = y + 55
+    header_y = y + 50
     
-    # Bayangan merah tua
+    header_font = get_font(68, bold=True)
+    # Bayangan
     draw.text((header_center_x + 4, header_y + 4), header_text, 
               fill=RED_SHADOW, anchor="mm", font=header_font)
-    # Teks utama merah
+    # Teks utama
     draw.text((header_center_x, header_y), header_text, 
               fill=RED_HEADER, anchor="mm", font=header_font)
     
-    # 3. Harga Normal
-    y_normal = y + 125
-    draw.text((x + 20, y_normal), "Harga Normal", 
-              fill=WHITE, anchor="lm", font=get_font(32, bold=False))
+    # 3. Label "Harga Normal"
+    y_normal_label = y + 115
+    draw.text((x + 20, y_normal_label), "Harga Normal", 
+              fill=WHITE, anchor="lm", font=get_font(30, bold=False))
     
-    # Teks "Rp"
-    draw.text((x + 210, y_normal), "Rp", 
+    # 4. Harga Normal (dengan auto-fit)
+    y_normal_value = y + 120
+    txt_normal = format_angka(harga_normal)
+    max_width_normal = CELL_W - 180  # Ruang untuk "Rp" dan margin
+    
+    # Auto-fit untuk harga normal
+    normal_font, _ = fit_text_to_width(draw, txt_normal, max_width_normal, 65, bold=True)
+    normal_bbox = draw.textbbox((0, 0), txt_normal, font=normal_font)
+    normal_width = normal_bbox[2] - normal_bbox[0]
+    
+    # Posisi "Rp"
+    draw.text((x + 20, y_normal_value), "Rp", 
               fill=WHITE, anchor="lm", font=get_font(34, bold=True))
     
-    # Angka harga normal (besar)
-    txt_normal = format_angka(harga_normal)
-    normal_font = get_font(72, bold=True)
-    draw.text((x + 270, y_normal), txt_normal, 
+    # Posisi angka (setelah Rp + spasi)
+    angka_x = x + 75
+    draw.text((angka_x, y_normal_value), txt_normal, 
               fill=WHITE, anchor="lm", font=normal_font)
     
-    # Coretan garis putih
-    bbox = draw.textbbox((x + 270, y_normal), txt_normal, font=normal_font, anchor="lm")
-    line_y = y_normal + 8
-    draw.line([bbox[0] - 5, line_y, bbox[2] + 5, line_y], fill=WHITE, width=5)
+    # Coretan garis putih di atas harga normal
+    line_y = y_normal_value + 8
+    draw.line([angka_x - 5, line_y, angka_x + normal_width + 5, line_y], 
+              fill=WHITE, width=5)
     
-    # 4. Harga Spesial
-    y_spesial_label = y + 195
+    # 5. Label "Harga Spesial"
+    y_spesial_label = y + 185
     draw.text((x + 20, y_spesial_label), "Harga Spesial", 
-              fill=WHITE, anchor="lm", font=get_font(32, bold=False))
+              fill=WHITE, anchor="lm", font=get_font(30, bold=False))
     
-    # Kotak hitam untuk harga spesial
-    box_y = y + 230
-    box_h = CELL_H - 270
-    draw.rectangle([x + 15, box_y, x + CELL_W - 15, y + CELL_H - 15], 
-                   fill=BLACK)
+    # 6. Kotak hitam untuk harga spesial
+    box_y = y + 220
+    box_h = CELL_H - 265
+    box_x1 = x + 15
+    box_x2 = x + CELL_W - 15
+    draw.rectangle([box_x1, box_y, box_x2, y + CELL_H - 15], fill=BLACK)
     
-    # Teks "Rp" di dalam kotak hitam
-    draw.text((x + 50, box_y + box_h // 2), "Rp", 
+    # 7. Teks "Rp" di dalam kotak
+    draw.text((box_x1 + 30, box_y + box_h // 2), "Rp", 
               fill=WHITE, anchor="lm", font=get_font(48, bold=True))
     
-    # Angka harga spesial (auto fit)
+    # 8. Harga Spesial (auto-fit besar)
     txt_spesial = format_angka(harga_spesial)
-    max_width = CELL_W - 130
-    font_size = 160
+    max_width_spesial = CELL_W - 120
     
-    while font_size > 40:
-        test_font = get_font(font_size, bold=True)
-        bbox = draw.textbbox((0, 0), txt_spesial, font=test_font)
-        if bbox[2] - bbox[0] <= max_width:
-            break
-        font_size -= 10
-    
-    spesial_font = get_font(min(font_size, 150), bold=True)
-    draw.text((x + CELL_W - 40, box_y + box_h // 2), txt_spesial, 
+    spesial_font, _ = fit_text_to_width(draw, txt_spesial, max_width_spesial, 150, bold=True)
+    draw.text((box_x2 - 20, box_y + box_h // 2), txt_spesial, 
               fill=WHITE, anchor="rm", font=spesial_font)
 
 
 def draw_promo(draw, x, y, nama, harga):
     """Kartu PROMOSI"""
-    # Background kuning
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=YELLOW_BG, outline=BLACK, width=2)
-    
-    # Header merah
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=(255, 240, 0), outline=BLACK, width=2)
     draw.rectangle([x, y, x + CELL_W, y + 90], fill=RED_HEADER)
     draw.text((x + CELL_W // 2, y + 50), "PROMOSI", 
-              fill=YELLOW_BG, anchor="mm", font=get_font(55, bold=True))
+              fill=(255, 240, 0), anchor="mm", font=get_font(55, bold=True))
     
-    # Nama produk
-    nama_text = nama.upper() if len(nama) < 20 else nama[:17] + "..."
+    # Nama produk auto-fit
+    nama_text = nama.upper()
+    max_width = CELL_W - 60
+    name_font, _ = fit_text_to_width(draw, nama_text, max_width, 50, bold=True)
     draw.text((x + CELL_W // 2, y + 170), nama_text, 
-              fill=BLACK, anchor="mm", font=get_font(48, bold=True))
+              fill=BLACK, anchor="mm", font=name_font)
     
-    # Harga
+    # Harga auto-fit
     harga_text = format_angka(harga)
+    price_font, _ = fit_text_to_width(draw, harga_text, CELL_W - 80, 140, bold=True)
     draw.text((x + CELL_W // 2, y + 320), harga_text, 
-              fill=RED_HEADER, anchor="mm", font=get_font(140, bold=True))
+              fill=RED_HEADER, anchor="mm", font=price_font)
 
 
 def draw_normal(draw, x, y, nama, harga):
     """Kartu NORMAL"""
-    # Background putih
     draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=WHITE, outline=BLACK, width=2)
     
-    # Nama produk
-    nama_text = nama.upper() if len(nama) < 25 else nama[:22] + "..."
+    nama_text = nama.upper()
+    max_width = CELL_W - 60
+    name_font, _ = fit_text_to_width(draw, nama_text, max_width, 48, bold=True)
     draw.text((x + CELL_W // 2, y + 140), nama_text, 
-              fill=BLACK, anchor="mm", font=get_font(48, bold=True))
+              fill=BLACK, anchor="mm", font=name_font)
     
-    # Harga
-    draw.text((x + CELL_W // 2, y + 300), format_angka(harga), 
-              fill=BLACK, anchor="mm", font=get_font(150, bold=True))
+    harga_text = format_angka(harga)
+    price_font, _ = fit_text_to_width(draw, harga_text, CELL_W - 80, 150, bold=True)
+    draw.text((x + CELL_W // 2, y + 300), harga_text, 
+              fill=BLACK, anchor="mm", font=price_font)
+
+
+# --- PARSING DENGAN QTY ---
+def parse_input_paket(line):
+    """Format: harga_awal.harga_promo.qty (qty opsional)"""
+    parts = line.strip().split('.')
+    if len(parts) < 2:
+        return None
+    
+    harga_awal = parts[0].strip()
+    harga_promo = parts[1].strip()
+    qty = int(parts[2]) if len(parts) >= 3 and parts[2].strip().isdigit() else 1
+    
+    return {
+        'harga_normal': harga_awal,
+        'harga_spesial': harga_promo,
+        'qty': min(qty, 100)  # Maks 100
+    }
+
+
+def parse_input_regular(line):
+    """Format: nama.harga.qty (qty opsional)"""
+    parts = line.strip().split('.')
+    if len(parts) < 2:
+        return None
+    
+    nama = '.'.join(parts[:-1]).strip()
+    harga = parts[-1].strip()
+    qty = 1
+    
+    # Cek apakah ada angka qty di bagian terakhir? (opsional)
+    # Untuk regular, qty tidak didukung di format ini
+    
+    return {'nama': nama, 'harga': harga, 'qty': 1}
 
 
 # --- HANDLER BOT ---
 async def start(update: Update, context):
     await update.message.reply_text(
         "🎨 *Bot Cetak Harga Mewah*\n\n"
-        "Pilih mode:\n"
-        "• /paket - Format PAKET HEMAT (2 harga)\n"
-        "• /promo - Format PROMOSI (1 harga)\n"
-        "• /normal - Format NORMAL (1 harga)\n\n"
-        "Format input:\n"
-        "• Paket: `harga_normal.harga_spesial`\n"
-        "• Promo: `nama.harga`\n"
-        "• Normal: `nama.harga`\n\n"
-        "Contoh:\n"
-        "`42800.31400` (mode paket)\n"
-        "`Indomie Goreng.3500` (mode promo/normal)",
+        "📦 *Mode PAKET* (2 harga)\n"
+        "Format: `harga_normal.harga_promo.qty`\n"
+        "Contoh: `450000.8000.5` (cetak 5 kali)\n\n"
+        "🔥 *Mode PROMO* (diskon)\n"
+        "Format: `nama.harga`\n"
+        "Contoh: `Indomie Goreng.3500`\n\n"
+        "📄 *Mode NORMAL* (harga biasa)\n"
+        "Format: `nama.harga`\n"
+        "Contoh: `Beras Premium.75000`\n\n"
+        "Multiple line diperbolehkan.",
         parse_mode="Markdown",
         reply_markup=MAIN_KEYBOARD
     )
@@ -202,17 +248,15 @@ async def set_mode(update: Update, context):
     mode = update.message.text.replace('/', '')
     context.user_data['mode'] = mode
     
-    mode_names = {
-        'paket': '📦 PAKET HEMAT (2 harga)',
-        'promo': '🔥 PROMO (diskon)',
-        'normal': '📄 NORMAL (harga biasa)'
+    mode_help = {
+        'paket': "📦 PAKET HEMAT\nFormat: `harga_normal.harga_promo.qty`\nContoh: `450000.8000.3`",
+        'promo': "🔥 PROMO\nFormat: `nama.harga`\nContoh: `Indomie Goreng.3500`",
+        'normal': "📄 NORMAL\nFormat: `nama.harga`\nContoh: `Beras Premium.75000`"
     }
     
     await update.message.reply_text(
-        f"✅ Mode {mode_names.get(mode, mode.upper())} aktif.\n\n"
-        f"Kirim data (pisah dengan titik . ):\n"
-        f"{'Contoh: 42800.31400' if mode == 'paket' else 'Contoh: Indomie Goreng.3500'}\n"
-        f"Bisa multiple line, satu baris satu item.",
+        f"✅ Mode {mode.upper()} aktif.\n\n{mode_help.get(mode, '')}\n\nKirim data sekarang:",
+        parse_mode="Markdown",
         reply_markup=ForceReply()
     )
 
@@ -226,60 +270,66 @@ async def handle_message(update: Update, context):
     text = update.message.text.strip()
     lines = text.split('\n')
     
-    items = []
+    all_items = []
     errors = []
     
     for line_num, line in enumerate(lines, 1):
         line = line.strip()
         if not line:
             continue
-            
-        parts = line.split('.')
         
         try:
             if mode == 'paket':
-                if len(parts) != 2:
-                    errors.append(f"Baris {line_num}: butuh 2 harga (contoh: 42800.31400)")
-                    continue
-                items.append({
-                    'harga_normal': parts[0].strip(),
-                    'harga_spesial': parts[1].strip()
-                })
-            else:  # promo atau normal
+                item = parse_input_paket(line)
+                if item:
+                    # Duplikasi sesuai qty
+                    for _ in range(item['qty']):
+                        all_items.append({
+                            'harga_normal': item['harga_normal'],
+                            'harga_spesial': item['harga_spesial']
+                        })
+                else:
+                    errors.append(f"Baris {line_num}: format salah (contoh: 450000.8000.2)")
+            else:
+                # Mode promo atau normal
+                parts = line.split('.')
                 if len(parts) < 2:
-                    errors.append(f"Baris {line_num}: butuh nama dan harga (contoh: Indomie.3500)")
+                    errors.append(f"Baris {line_num}: format salah (contoh: Nama.5000)")
                     continue
                 nama = '.'.join(parts[:-1]).strip()
                 harga = parts[-1].strip()
-                items.append({'nama': nama, 'harga': harga})
+                all_items.append({'nama': nama, 'harga': harga})
         except Exception as e:
-            errors.append(f"Baris {line_num}: error - {str(e)}")
+            errors.append(f"Baris {line_num}: {str(e)}")
     
     if errors:
-        await update.message.reply_text("⚠️ *Error pada data:*\n" + "\n".join(errors[:5]), parse_mode="Markdown")
+        await update.message.reply_text("⚠️ *Error:*\n" + "\n".join(errors[:5]), parse_mode="Markdown")
         return
     
-    if not items:
-        await update.message.reply_text("❌ Tidak ada data valid. Kirim ulang dengan format yang benar.")
+    if not all_items:
+        await update.message.reply_text("❌ Tidak ada data valid.")
         return
     
-    # Proses pembuatan gambar
-    num_images = math.ceil(len(items) / ITEMS_PER_IMAGE)
+    await update.message.reply_text(f"🖨️ Memproses {len(all_items)} item...")
+    
+    # Batasi maksimal item
+    if len(all_items) > 200:
+        await update.message.reply_text("⚠️ Maksimal 200 item, sisanya diabaikan.")
+        all_items = all_items[:200]
+    
+    # Buat gambar
+    num_images = math.ceil(len(all_items) / ITEMS_PER_IMAGE)
     
     for img_idx in range(num_images):
         start_idx = img_idx * ITEMS_PER_IMAGE
-        end_idx = min(start_idx + ITEMS_PER_IMAGE, len(items))
-        batch = items[start_idx:end_idx]
+        batch = all_items[start_idx:start_idx + ITEMS_PER_IMAGE]
         
-        # Buat gambar baru
         img = Image.new('RGB', (IMG_W, IMG_H), color=WHITE)
         draw = ImageDraw.Draw(img)
         
-        # Gambar setiap item
         for idx in range(ITEMS_PER_IMAGE):
             row = idx // COLS
             col = idx % COLS
-            
             x_pos = BORDER_GRID + col * (CELL_W + BORDER_GRID)
             y_pos = BORDER_GRID + row * (CELL_H + BORDER_GRID)
             
@@ -289,29 +339,23 @@ async def handle_message(update: Update, context):
                     draw_paket(draw, x_pos, y_pos, item['harga_normal'], item['harga_spesial'])
                 elif mode == 'promo':
                     draw_promo(draw, x_pos, y_pos, item['nama'], item['harga'])
-                elif mode == 'normal':
+                else:
                     draw_normal(draw, x_pos, y_pos, item['nama'], item['harga'])
-            else:
-                # Cell kosong (putih)
-                draw.rectangle([x_pos, y_pos, x_pos + CELL_W, y_pos + CELL_H], fill=WHITE)
         
-        # Simpan ke buffer
         bio = io.BytesIO()
         img.save(bio, format='PNG')
         bio.seek(0)
         
-        # Kirim gambar
-        caption = f"📸 Halaman {img_idx + 1} dari {num_images}" if num_images > 1 else None
+        caption = f"📸 Halaman {img_idx + 1}/{num_images}" if num_images > 1 else None
         await update.message.reply_photo(photo=bio, caption=caption, reply_markup=MAIN_KEYBOARD)
     
-    # Reset mode setelah selesai
     context.user_data['mode'] = None
-    await update.message.reply_text("✅ Selesai! Pilih mode lagi jika ingin cetak lebih banyak.")
+    await update.message.reply_text("✅ Selesai! Gunakan /paket, /promo, atau /normal untuk cetak lagi.")
 
 
 def main():
     if not TOKEN:
-        print("❌ ERROR: TELEGRAM_TOKEN tidak ditemukan di environment variables!")
+        print("❌ ERROR: TELEGRAM_TOKEN tidak ditemukan!")
         return
     
     print("🤖 Bot starting...")
