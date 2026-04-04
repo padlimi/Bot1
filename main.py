@@ -16,15 +16,43 @@ BLACK = (0, 0, 0)
 BLUE_BG = (0, 102, 210)
 RED_HEADER = (220, 0, 0)
 RED_SHADOW = (160, 0, 0)
-RED_LINE = (255, 0, 0)  # Warna merah untuk coretan
+RED_LINE = (255, 0, 0)
 
-# --- UKURAN GRID ---
+# --- UKURAN A4 (150 DPI - Optimal untuk cetak) ---
+# A4 = 210mm x 297mm
+# 150 DPI = 150 pixel per inch = 59 pixel per cm
+A4_W = 1240   # 210mm * 59 = 1239 ~ 1240 px
+A4_H = 1754   # 297mm * 59 = 1752 ~ 1754 px
+
+# Margin untuk cetak (agar tidak terpotong printer)
+MARGIN = 15   # pixel margin
+
+# Ukuran area cetak efektif
+PRINT_W = A4_W - (MARGIN * 2)  # 1240 - 30 = 1210 px
+PRINT_H = A4_H - (MARGIN * 2)  # 1754 - 30 = 1724 px
+
+# --- KONFIGURASI GRID ---
 COLS, ROWS = 2, 4
 ITEMS_PER_IMAGE = COLS * ROWS
-CELL_W, CELL_H = 600, 450
-BORDER_GRID = 10
-IMG_W = COLS * CELL_W + (COLS + 1) * BORDER_GRID
-IMG_H = ROWS * CELL_H + (ROWS + 1) * BORDER_GRID
+
+# Hitung ukuran cell berdasarkan area cetak
+CELL_W = (PRINT_W - (COLS - 1) * 5) // COLS  # 1210 - 5 = 1205 // 2 = 602 px
+CELL_H = (PRINT_H - (ROWS - 1) * 5) // ROWS  # 1724 - 15 = 1709 // 4 = 427 px
+
+# Ukuran total gambar (A4 full)
+IMG_W = A4_W
+IMG_H = A4_H
+
+# Posisi awal grid (dengan margin)
+START_X = MARGIN
+START_Y = MARGIN
+GAP = 5  # jarak antar cell
+
+print(f"📐 Konfigurasi A4 150 DPI:")
+print(f"   - Ukuran gambar: {IMG_W} x {IMG_H} px")
+print(f"   - Margin: {MARGIN} px")
+print(f"   - Cell size: {CELL_W} x {CELL_H} px")
+print(f"   - Grid: {COLS} x {ROWS} = {ITEMS_PER_IMAGE} kartu per halaman")
 
 # --- KEYBOARD ---
 MAIN_KEYBOARD = ReplyKeyboardMarkup([
@@ -72,49 +100,48 @@ def format_angka(harga):
 def fit_text_to_width(draw, text, max_width, initial_size, bold=True):
     """Menyesuaikan ukuran font agar muat dalam lebar tertentu"""
     size = initial_size
-    while size > 20:
+    while size > 16:
         font = get_font(size, bold)
         bbox = draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
         if text_width <= max_width:
             return font, size
-        size -= 5
-    return get_font(20, bold), 20
+        size -= 4
+    return get_font(16, bold), 16
 
 
 def draw_paket(draw, x, y, harga_normal, harga_spesial):
-    """Gambar kartu PAKET HEMAT dengan harga normal di tengah latar hitam & coretan"""
+    """Gambar kartu PAKET HEMAT untuk cetak A4"""
     
-    # 1. Background biru
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=BLUE_BG)
+    # 1. Background biru dengan outline 1px
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], 
+                   fill=BLUE_BG, outline=BLACK, width=1)
     
-    # 2. Header "PAKET HEMAT"
+    # 2. Header "PAKET HEMAT" (skala lebih kecil untuk A4)
     header_text = "PAKET HEMAT"
     header_center_x = x + CELL_W // 2
-    header_y = y + 55
+    header_y = y + int(CELL_H * 0.12)  # 12% dari tinggi cell
     
-    header_font = get_font(68, bold=True)
+    header_font = get_font(52, bold=True)  # Lebih kecil dari sebelumnya (68)
     # Bayangan
-    draw.text((header_center_x + 4, header_y + 4), header_text, 
+    draw.text((header_center_x + 3, header_y + 3), header_text, 
               fill=RED_SHADOW, anchor="mm", font=header_font)
     # Teks utama
     draw.text((header_center_x, header_y), header_text, 
               fill=RED_HEADER, anchor="mm", font=header_font)
     
-    # 3. Label "Harga Normal" (kiri)
-    y_normal_label = y + 125
-    draw.text((x + 25, y_normal_label), "Harga Normal", 
-              fill=WHITE, anchor="lm", font=get_font(30, bold=False))
+    # 3. Label "Harga Normal"
+    y_normal_label = y + int(CELL_H * 0.28)
+    draw.text((x + 15, y_normal_label), "Harga Normal", 
+              fill=WHITE, anchor="lm", font=get_font(24, bold=False))
     
-    # 4. Harga Normal dengan LATAR HITAM (DI TENGAH)
-    y_normal_value = y + 118
+    # 4. Harga Normal dengan LATAR HITAM
+    y_normal_value = y + int(CELL_H * 0.27)
     txt_normal = format_angka(harga_normal)
     
-    # Font untuk harga normal (ukuran sedang)
-    normal_font = get_font(48, bold=True)
-    rp_font = get_font(38, bold=True)
+    normal_font = get_font(38, bold=True)
+    rp_font = get_font(30, bold=True)
     
-    # Hitung dimensi teks
     rp_text = "Rp"
     rp_bbox = draw.textbbox((0, 0), rp_text, font=rp_font)
     rp_width = rp_bbox[2] - rp_bbox[0]
@@ -122,99 +149,97 @@ def draw_paket(draw, x, y, harga_normal, harga_spesial):
     normal_bbox = draw.textbbox((0, 0), txt_normal, font=normal_font)
     normal_width = normal_bbox[2] - normal_bbox[0]
     
-    # Total lebar (Rp + spasi + angka)
-    spacing = 10
+    spacing = 8
     total_width = rp_width + spacing + normal_width
-    total_height = max(rp_bbox[3] - rp_bbox[1], normal_bbox[3] - normal_bbox[1]) + 24
+    total_height = max(rp_bbox[3] - rp_bbox[1], normal_bbox[3] - normal_bbox[1]) + 16
     
-    # Posisi KOTAK HITAM DI TENGAH (antara label dan tepi kanan)
-    label_right = x + 180  # perkiraan akhir label "Harga Normal"
-    available_width = CELL_W - (label_right - x) - 30
-    box_width = min(total_width + 40, available_width)
+    label_right = x + 140
+    available_width = CELL_W - (label_right - x) - 20
+    box_width = min(total_width + 30, available_width)
     
-    box_center_x = x + CELL_W - 30 - (box_width // 2)
+    box_center_x = x + CELL_W - 25 - (box_width // 2)
     box_left = box_center_x - (box_width // 2)
     box_right = box_left + box_width
     
-    # Gambar latar hitam
-    box_top = y_normal_value - 12
-    box_bottom = y_normal_value + total_height - 8
-    draw.rectangle([box_left, box_top, box_right, box_bottom], fill=BLACK)
+    box_top = y_normal_value - 10
+    box_bottom = y_normal_value + total_height - 6
     
-    # Posisi teks DI TENGAH kotak hitam
+    draw.rectangle([box_left, box_top, box_right, box_bottom], 
+                   fill=BLACK, outline=WHITE, width=1)
+    
     text_center_x = (box_left + box_right) // 2
-    text_y = y_normal_value + 5
+    text_y = y_normal_value + 4
     
-    # Gambar "Rp"
     rp_x = text_center_x - (normal_width // 2) - spacing - (rp_width // 2)
     draw.text((rp_x, text_y), rp_text, fill=WHITE, anchor="rm", font=rp_font)
-    
-    # Gambar angka harga normal
     draw.text((text_center_x + (normal_width // 2), text_y), txt_normal, 
               fill=WHITE, anchor="rm", font=normal_font)
     
-    # CORETAN GARIS MERAH TEBAL DI ATAS HARGA NORMAL
-    line_y = text_y - 8
-    draw.line([box_left + 10, line_y, box_right - 10, line_y], 
-              fill=RED_LINE, width=6)
+    # Coretan garis merah
+    line_y = text_y - 6
+    draw.line([box_left + 8, line_y, box_right - 8, line_y], 
+              fill=RED_LINE, width=5)
     
-    # 5. Label "Harga Spesial" (kiri)
-    y_spesial_label = y + 210
-    draw.text((x + 25, y_spesial_label), "Harga Spesial", 
-              fill=WHITE, anchor="lm", font=get_font(30, bold=False))
+    # 5. Label "Harga Spesial"
+    y_spesial_label = y + int(CELL_H * 0.48)
+    draw.text((x + 15, y_spesial_label), "Harga Spesial", 
+              fill=WHITE, anchor="lm", font=get_font(24, bold=False))
     
-    # 6. Kotak hitam untuk harga spesial (lebih besar)
-    box_y = y + 250
-    box_h = CELL_H - 295
-    box_x1 = x + 20
-    box_x2 = x + CELL_W - 20
-    draw.rectangle([box_x1, box_y, box_x2, y + CELL_H - 18], fill=BLACK)
+    # 6. Kotak hitam untuk harga spesial
+    box_y = y + int(CELL_H * 0.57)
+    box_h = CELL_H - int(CELL_H * 0.68)
+    box_x1 = x + 12
+    box_x2 = x + CELL_W - 12
+    draw.rectangle([box_x1, box_y, box_x2, y + CELL_H - 12], 
+                   fill=BLACK, outline=WHITE, width=1)
     
     # 7. Teks "Rp" di kiri kotak hitam
-    draw.text((box_x1 + 25, box_y + box_h // 2), "Rp", 
-              fill=WHITE, anchor="lm", font=get_font(48, bold=True))
+    draw.text((box_x1 + 15, box_y + box_h // 2), "Rp", 
+              fill=WHITE, anchor="lm", font=get_font(36, bold=True))
     
-    # 8. Harga Spesial (alignment KANAN dalam kotak hitam)
+    # 8. Harga Spesial
     txt_spesial = format_angka(harga_spesial)
-    max_width_spesial = CELL_W - 100
+    max_width_spesial = CELL_W - 80
     
-    spesial_font, spesial_size = fit_text_to_width(draw, txt_spesial, max_width_spesial, 140, bold=True)
-    draw.text((box_x2 - 20, box_y + box_h // 2), txt_spesial, 
+    spesial_font, _ = fit_text_to_width(draw, txt_spesial, max_width_spesial, 100, bold=True)
+    draw.text((box_x2 - 15, box_y + box_h // 2), txt_spesial, 
               fill=WHITE, anchor="rm", font=spesial_font)
 
 
 def draw_promo(draw, x, y, nama, harga):
-    """Kartu PROMOSI"""
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=(255, 240, 0), outline=BLACK, width=2)
-    draw.rectangle([x, y, x + CELL_W, y + 90], fill=RED_HEADER)
-    draw.text((x + CELL_W // 2, y + 50), "PROMOSI", 
-              fill=(255, 240, 0), anchor="mm", font=get_font(55, bold=True))
+    """Kartu PROMOSI untuk cetak A4"""
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], 
+                   fill=(255, 240, 0), outline=BLACK, width=1)
+    draw.rectangle([x, y, x + CELL_W, y + int(CELL_H * 0.2)], fill=RED_HEADER)
+    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.12)), "PROMOSI", 
+              fill=(255, 240, 0), anchor="mm", font=get_font(44, bold=True))
     
     nama_text = nama.upper()
-    max_width = CELL_W - 60
-    name_font, _ = fit_text_to_width(draw, nama_text, max_width, 50, bold=True)
-    draw.text((x + CELL_W // 2, y + 170), nama_text, 
+    max_width = CELL_W - 40
+    name_font, _ = fit_text_to_width(draw, nama_text, max_width, 40, bold=True)
+    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.42)), nama_text, 
               fill=BLACK, anchor="mm", font=name_font)
     
     harga_text = format_angka(harga)
-    price_font, _ = fit_text_to_width(draw, harga_text, CELL_W - 80, 140, bold=True)
-    draw.text((x + CELL_W // 2, y + 320), harga_text, 
+    price_font, _ = fit_text_to_width(draw, harga_text, CELL_W - 60, 100, bold=True)
+    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.75)), harga_text, 
               fill=RED_HEADER, anchor="mm", font=price_font)
 
 
 def draw_normal(draw, x, y, nama, harga):
-    """Kartu NORMAL"""
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=WHITE, outline=BLACK, width=2)
+    """Kartu NORMAL untuk cetak A4"""
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], 
+                   fill=WHITE, outline=BLACK, width=1)
     
     nama_text = nama.upper()
-    max_width = CELL_W - 60
-    name_font, _ = fit_text_to_width(draw, nama_text, max_width, 48, bold=True)
-    draw.text((x + CELL_W // 2, y + 140), nama_text, 
+    max_width = CELL_W - 40
+    name_font, _ = fit_text_to_width(draw, nama_text, max_width, 38, bold=True)
+    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.35)), nama_text, 
               fill=BLACK, anchor="mm", font=name_font)
     
     harga_text = format_angka(harga)
-    price_font, _ = fit_text_to_width(draw, harga_text, CELL_W - 80, 150, bold=True)
-    draw.text((x + CELL_W // 2, y + 300), harga_text, 
+    price_font, _ = fit_text_to_width(draw, harga_text, CELL_W - 60, 110, bold=True)
+    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.7)), harga_text, 
               fill=BLACK, anchor="mm", font=price_font)
 
 
@@ -237,7 +262,7 @@ def parse_input_paket(line):
 
 async def start(update: Update, context):
     await update.message.reply_text(
-        "🎨 *Bot Cetak Harga Mewah*\n\n"
+        "🎨 *Bot Cetak Harga Mewah - Format A4*\n\n"
         "📦 *Mode PAKET* (2 harga)\n"
         "Format: `harga_normal.harga_promo.qty`\n"
         "Contoh: `600000.70000.3`\n\n"
@@ -247,6 +272,9 @@ async def start(update: Update, context):
         "📄 *Mode NORMAL*\n"
         "Format: `nama.harga`\n"
         "Contoh: `Beras Premium.75000`\n\n"
+        "✅ *Ukuran A4 (150 DPI)* - Siap cetak!\n"
+        f"📐 {COLS}x{ROWS} kartu per halaman\n"
+        f"📏 Margin {MARGIN}px untuk keamanan printer\n\n"
         "Multiple line diperbolehkan.",
         parse_mode="Markdown",
         reply_markup=MAIN_KEYBOARD
@@ -258,7 +286,7 @@ async def set_mode(update: Update, context):
     context.user_data['mode'] = mode
     
     await update.message.reply_text(
-        f"✅ Mode {mode.upper()} aktif.\n\n"
+        f"✅ Mode {mode.upper()} aktif - Ukuran A4 siap cetak!\n\n"
         f"Kirim data sekarang (pisah dengan titik .):",
         reply_markup=ForceReply()
     )
@@ -311,7 +339,7 @@ async def handle_message(update: Update, context):
         await update.message.reply_text("❌ Tidak ada data valid.")
         return
     
-    await update.message.reply_text(f"🖨️ Memproses {len(all_items)} item...")
+    await update.message.reply_text(f"🖨️ Memproses {len(all_items)} item... (Ukuran A4 150 DPI)")
     
     if len(all_items) > 200:
         await update.message.reply_text("⚠️ Maksimal 200 item, sisanya diabaikan.")
@@ -323,14 +351,18 @@ async def handle_message(update: Update, context):
         start_idx = img_idx * ITEMS_PER_IMAGE
         batch = all_items[start_idx:start_idx + ITEMS_PER_IMAGE]
         
+        # Buat gambar ukuran A4
         img = Image.new('RGB', (IMG_W, IMG_H), color=WHITE)
         draw = ImageDraw.Draw(img)
+        
+        # Gambar garis bantu margin (opsional, untuk debugging)
+        # draw.rectangle([MARGIN, MARGIN, IMG_W-MARGIN, IMG_H-MARGIN], outline=(200,200,200), width=1)
         
         for idx in range(ITEMS_PER_IMAGE):
             row = idx // COLS
             col = idx % COLS
-            x_pos = BORDER_GRID + col * (CELL_W + BORDER_GRID)
-            y_pos = BORDER_GRID + row * (CELL_H + BORDER_GRID)
+            x_pos = START_X + col * (CELL_W + GAP)
+            y_pos = START_Y + row * (CELL_H + GAP)
             
             if idx < len(batch):
                 item = batch[idx]
@@ -341,15 +373,16 @@ async def handle_message(update: Update, context):
                 else:
                     draw_normal(draw, x_pos, y_pos, item['nama'], item['harga'])
         
+        # Simpan dengan kualitas tinggi untuk cetak
         bio = io.BytesIO()
-        img.save(bio, format='PNG')
+        img.save(bio, format='PNG', dpi=(150, 150))
         bio.seek(0)
         
-        caption = f"📸 Halaman {img_idx + 1}/{num_images}" if num_images > 1 else None
+        caption = f"📸 Halaman {img_idx + 1}/{num_images} (A4 150 DPI - siap cetak)"
         await update.message.reply_photo(photo=bio, caption=caption, reply_markup=MAIN_KEYBOARD)
     
     context.user_data['mode'] = None
-    await update.message.reply_text("✅ Selesai! Gunakan /paket, /promo, atau /normal untuk cetak lagi.")
+    await update.message.reply_text("✅ Selesai! Gambar sudah siap cetak di kertas A4.")
 
 
 def main():
@@ -357,7 +390,10 @@ def main():
         print("❌ ERROR: TELEGRAM_TOKEN tidak ditemukan!")
         return
     
-    print("🤖 Bot starting...")
+    print("🤖 Bot starting with A4 format (150 DPI)...")
+    print(f"   - Image size: {IMG_W} x {IMG_H} px")
+    print(f"   - Cell size: {CELL_W} x {CELL_H} px")
+    
     app = Application.builder().token(TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
