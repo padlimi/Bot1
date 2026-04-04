@@ -16,6 +16,7 @@ BLACK = (0, 0, 0)
 BLUE_BG = (0, 102, 210)
 RED_HEADER = (220, 0, 0)
 RED_SHADOW = (160, 0, 0)
+RED_LINE = (255, 0, 0)  # Warna merah untuk coretan
 
 # --- UKURAN GRID ---
 COLS, ROWS = 2, 4
@@ -82,7 +83,7 @@ def fit_text_to_width(draw, text, max_width, initial_size, bold=True):
 
 
 def draw_paket(draw, x, y, harga_normal, harga_spesial):
-    """Gambar kartu PAKET HEMAT dengan latar hitam untuk harga normal"""
+    """Gambar kartu PAKET HEMAT dengan harga normal di tengah latar hitam & coretan"""
     
     # 1. Background biru
     draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=BLUE_BG)
@@ -105,16 +106,15 @@ def draw_paket(draw, x, y, harga_normal, harga_spesial):
     draw.text((x + 25, y_normal_label), "Harga Normal", 
               fill=WHITE, anchor="lm", font=get_font(30, bold=False))
     
-    # 4. Harga Normal dengan LATAR HITAM (alignment KANAN)
-    y_normal_value = y + 120
+    # 4. Harga Normal dengan LATAR HITAM (DI TENGAH)
+    y_normal_value = y + 118
     txt_normal = format_angka(harga_normal)
-    max_width_normal = CELL_W - 160
     
-    # Auto-fit font
-    normal_font, _ = fit_text_to_width(draw, txt_normal, max_width_normal, 55, bold=True)
+    # Font untuk harga normal (ukuran sedang)
+    normal_font = get_font(48, bold=True)
+    rp_font = get_font(38, bold=True)
     
-    # Hitung dimensi teks untuk latar hitam
-    rp_font = get_font(34, bold=True)
+    # Hitung dimensi teks
     rp_text = "Rp"
     rp_bbox = draw.textbbox((0, 0), rp_text, font=rp_font)
     rp_width = rp_bbox[2] - rp_bbox[0]
@@ -123,28 +123,40 @@ def draw_paket(draw, x, y, harga_normal, harga_spesial):
     normal_width = normal_bbox[2] - normal_bbox[0]
     
     # Total lebar (Rp + spasi + angka)
-    total_width = rp_width + 8 + normal_width
-    total_height = max(rp_bbox[3] - rp_bbox[1], normal_bbox[3] - normal_bbox[1]) + 20
+    spacing = 10
+    total_width = rp_width + spacing + normal_width
+    total_height = max(rp_bbox[3] - rp_bbox[1], normal_bbox[3] - normal_bbox[1]) + 24
     
-    # Posisi kanan untuk latar hitam
-    margin_right = 25
-    box_right = x + CELL_W - margin_right
-    box_left = box_right - total_width - 10
+    # Posisi KOTAK HITAM DI TENGAH (antara label dan tepi kanan)
+    label_right = x + 180  # perkiraan akhir label "Harga Normal"
+    available_width = CELL_W - (label_right - x) - 30
+    box_width = min(total_width + 40, available_width)
+    
+    box_center_x = x + CELL_W - 30 - (box_width // 2)
+    box_left = box_center_x - (box_width // 2)
+    box_right = box_left + box_width
     
     # Gambar latar hitam
     box_top = y_normal_value - 12
     box_bottom = y_normal_value + total_height - 8
     draw.rectangle([box_left, box_top, box_right, box_bottom], fill=BLACK)
     
-    # Posisi teks di dalam kotak hitam (rata kanan)
+    # Posisi teks DI TENGAH kotak hitam
+    text_center_x = (box_left + box_right) // 2
     text_y = y_normal_value + 5
     
-    # Gambar "Rp" (rata kanan ke angka)
-    rp_x = box_right - normal_width - 8
+    # Gambar "Rp"
+    rp_x = text_center_x - (normal_width // 2) - spacing - (rp_width // 2)
     draw.text((rp_x, text_y), rp_text, fill=WHITE, anchor="rm", font=rp_font)
     
-    # Gambar angka harga normal (rata kanan)
-    draw.text((box_right, text_y), txt_normal, fill=WHITE, anchor="rm", font=normal_font)
+    # Gambar angka harga normal
+    draw.text((text_center_x + (normal_width // 2), text_y), txt_normal, 
+              fill=WHITE, anchor="rm", font=normal_font)
+    
+    # CORETAN GARIS MERAH TEBAL DI ATAS HARGA NORMAL
+    line_y = text_y - 8
+    draw.line([box_left + 10, line_y, box_right - 10, line_y], 
+              fill=RED_LINE, width=6)
     
     # 5. Label "Harga Spesial" (kiri)
     y_spesial_label = y + 210
@@ -166,7 +178,7 @@ def draw_paket(draw, x, y, harga_normal, harga_spesial):
     txt_spesial = format_angka(harga_spesial)
     max_width_spesial = CELL_W - 100
     
-    spesial_font, _ = fit_text_to_width(draw, txt_spesial, max_width_spesial, 140, bold=True)
+    spesial_font, spesial_size = fit_text_to_width(draw, txt_spesial, max_width_spesial, 140, bold=True)
     draw.text((box_x2 - 20, box_y + box_h // 2), txt_spesial, 
               fill=WHITE, anchor="rm", font=spesial_font)
 
@@ -228,7 +240,7 @@ async def start(update: Update, context):
         "🎨 *Bot Cetak Harga Mewah*\n\n"
         "📦 *Mode PAKET* (2 harga)\n"
         "Format: `harga_normal.harga_promo.qty`\n"
-        "Contoh: `500000.60000.3`\n\n"
+        "Contoh: `600000.70000.3`\n\n"
         "🔥 *Mode PROMO*\n"
         "Format: `nama.harga`\n"
         "Contoh: `Indomie Goreng.3500`\n\n"
@@ -279,7 +291,7 @@ async def handle_message(update: Update, context):
                             'harga_spesial': item['harga_spesial']
                         })
                 else:
-                    errors.append(f"Baris {line_num}: format salah (contoh: 500000.60000.2)")
+                    errors.append(f"Baris {line_num}: format salah (contoh: 600000.70000.2)")
             else:
                 parts = line.split('.')
                 if len(parts) < 2:
