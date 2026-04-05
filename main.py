@@ -50,6 +50,21 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup([
 ], resize_keyboard=True, one_time_keyboard=False)
 
 # ======================================================
+# SISTEM REMINDER CUSTOM
+# ======================================================
+custom_reminders = []  # Format: {'id': 1, 'time': '08:00', 'schedule': 'senin', 'message': 'Pesan', 'enabled': True}
+ADMIN_PASSWORD = "Reminder23"  # Ganti dengan password yang diinginkan
+
+# Keyboard untuk setting reminder
+REMINDER_KEYBOARD = ReplyKeyboardMarkup([
+    ["📋 Lihat Reminder", "➕ Buat Reminder Baru"],
+    ["✏️ Edit Reminder", "❌ Hapus Reminder"],
+    ["🔘 Aktif/Nonaktifkan", "🔙 Kembali"]
+], resize_keyboard=True, one_time_keyboard=False)
+
+CANCEL_KEYBOARD = ReplyKeyboardMarkup([["❌ Batal"]], resize_keyboard=True, one_time_keyboard=False)
+
+# ======================================================
 # FUNGSI UTILITY
 # ======================================================
 def get_font(size, bold=True):
@@ -192,7 +207,7 @@ def parse_input_paket(line):
     return {'harga_normal': harga_awal, 'harga_spesial': harga_promo, 'qty': min(qty, 100)}
 
 # ======================================================
-# REMINDER FUNCTIONS
+# REMINDER FUNCTIONS (BAWAAN)
 # ======================================================
 async def send_daily_reminder(context: CallbackContext):
     try:
@@ -233,10 +248,383 @@ async def send_monthly_reminder(context: CallbackContext):
         logging.error(f"❌ Gagal kirim reminder bulanan: {e}")
 
 # ======================================================
-# SCHEDULER MANUAL UNTUK RAILWAY
+# REMINDER CUSTOM FUNCTIONS
+# ======================================================
+async def send_reminder_custom(context: CallbackContext):
+    """Mengirim reminder custom yang sudah dijadwalkan"""
+    try:
+        wib = pytz.timezone('Asia/Jakarta')
+        now = datetime.now(wib)
+        hari_ini = now.strftime('%A').lower()
+        
+        # Mapping hari Inggris ke Indonesia
+        hari_map_eng = {
+            'monday': 'senin', 'tuesday': 'selasa', 'wednesday': 'rabu',
+            'thursday': 'kamis', 'friday': 'jumat', 'saturday': 'sabtu', 'sunday': 'minggu'
+        }
+        hari_ini = hari_map_eng.get(hari_ini, hari_ini)
+        
+        for reminder in custom_reminders:
+            if reminder.get('enabled', True):
+                # Cek jadwal
+                if reminder['schedule'] == 'setiap_hari':
+                    waktu_ok = True
+                elif reminder['schedule'] == 'weekday':
+                    waktu_ok = hari_ini not in ['sabtu', 'minggu']
+                elif reminder['schedule'] == 'weekend':
+                    waktu_ok = hari_ini in ['sabtu', 'minggu']
+                else:
+                    waktu_ok = reminder['schedule'] == hari_ini
+                
+                if waktu_ok:
+                    jam, menit = map(int, reminder['time'].split(':'))
+                    if now.hour == jam and now.minute == menit:
+                        await context.bot.send_message(
+                            chat_id=GROUP_CHAT_ID,
+                            message_thread_id=MESSAGE_THREAD_ID,
+                            text=f"⏰ *REMINDER*\n\n{reminder['message']}",
+                            parse_mode="Markdown"
+                        )
+                        logging.info(f"✅ Reminder custom terkirim: {reminder['message'][:50]}")
+                        await asyncio.sleep(60)
+    except Exception as e:
+        logging.error(f"❌ Gagal kirim reminder custom: {e}")
+
+async def check_password(update: Update, context: CallbackContext):
+    """Memeriksa password yang dimasukkan"""
+    if context.user_data.get('awaiting_password'):
+        password = update.message.text.strip()
+        if password == ADMIN_PASSWORD:
+            context.user_data['awaiting_password'] = False
+            context.user_data['reminder_mode'] = True
+            await update.message.reply_text(
+                "✅ *Akses Diterima!*\n\nSilakan pilih menu:",
+                parse_mode="Markdown",
+                reply_markup=REMINDER_KEYBOARD
+            )
+        else:
+            await update.message.reply_text("❌ *Password salah!* Akses ditolak.", parse_mode="Markdown")
+            context.user_data['awaiting_password'] = False
+        return True
+    return False
+
+async def list_reminders(update: Update, context: CallbackContext):
+    """Menampilkan daftar reminder"""
+    if not custom_reminders:
+        await update.message.reply_text("📭 *Belum ada reminder custom.*\n\nGunakan 'Buat Reminder Baru' untuk menambahkan.", parse_mode="Markdown")
+        return
+    
+    pesan = "📋 *Daftar Reminder Custom*\n\n"
+    for r in custom_reminders:
+        status = "✅ Aktif" if r['enabled'] else "❌ Nonaktif"
+        pesan += f"*ID {r['id']}*\n"
+        pesan += f"⏰ {r['time']} WIB\n"
+        pesan += f"📅 {r['schedule']}\n"
+        pesan += f"📝 {r['message'][:50]}\n"
+        pesan += f"🔘 {status}\n\n"
+    
+    await update.message.reply_text(pesan, parse_mode="Markdown")
+
+async def edit_reminder_menu(update: Update, context: CallbackContext):
+    """Menu edit reminder"""
+    if not custom_reminders:
+        await update.message.reply_text("📭 Tidak ada reminder untuk diedit.")
+        return
+    
+    await update.message.reply_text(
+        "✏️ *Edit Reminder*\n\n"
+        "Kirim ID reminder yang ingin diedit.\n\n"
+        f"ID yang tersedia: {', '.join([str(r['id']) for r in custom_reminders])}\n\n"
+        "Kirim `❌ Batal` untuk membatalkan.",
+        parse_mode="Markdown",
+        reply_markup=CANCEL_KEYBOARD
+    )
+    context.user_data['editing_reminder'] = True
+
+async def delete_reminder_menu(update: Update, context: CallbackContext):
+    """Menu hapus reminder"""
+    if not custom_reminders:
+        await update.message.reply_text("📭 Tidak ada reminder untuk dihapus.")
+        return
+    
+    await update.message.reply_text(
+        "❌ *Hapus Reminder*\n\n"
+        "Kirim ID reminder yang ingin dihapus.\n\n"
+        f"ID yang tersedia: {', '.join([str(r['id']) for r in custom_reminders])}\n\n"
+        "Kirim `❌ Batal` untuk membatalkan.",
+        parse_mode="Markdown",
+        reply_markup=CANCEL_KEYBOARD
+    )
+    context.user_data['deleting_reminder'] = True
+
+async def toggle_reminder_menu(update: Update, context: CallbackContext):
+    """Menu aktif/nonaktifkan reminder"""
+    if not custom_reminders:
+        await update.message.reply_text("📭 Tidak ada reminder untuk diubah statusnya.")
+        return
+    
+    await update.message.reply_text(
+        "🔘 *Aktif/Nonaktifkan Reminder*\n\n"
+        "Kirim ID reminder yang ingin diubah statusnya.\n\n"
+        f"ID yang tersedia: {', '.join([str(r['id']) for r in custom_reminders])}\n\n"
+        "Kirim `❌ Batal` untuk membatalkan.",
+        parse_mode="Markdown",
+        reply_markup=CANCEL_KEYBOARD
+    )
+    context.user_data['toggling_reminder'] = True
+
+async def process_edit_reminder(update: Update, context: CallbackContext):
+    """Proses edit reminder - pilih ID"""
+    text = update.message.text.strip()
+    
+    if text == "❌ Batal":
+        context.user_data['editing_reminder'] = False
+        await update.message.reply_text("❌ Dibatalkan.", reply_markup=REMINDER_KEYBOARD)
+        return True
+    
+    try:
+        reminder_id = int(text)
+        reminder = next((r for r in custom_reminders if r['id'] == reminder_id), None)
+        
+        if not reminder:
+            await update.message.reply_text(f"❌ Reminder dengan ID {reminder_id} tidak ditemukan!")
+            return True
+        
+        context.user_data['edit_id'] = reminder_id
+        await update.message.reply_text(
+            f"✏️ *Edit Reminder ID {reminder_id}*\n\n"
+            f"Format baru: `HH:MM_jadwal_pesan`\n\n"
+            f"Contoh: `09:00_senin_Rapat pagi`\n\n"
+            f"Kirim `❌ Batal` untuk membatalkan.",
+            parse_mode="Markdown"
+        )
+        context.user_data['waiting_new_reminder_data'] = True
+        context.user_data['editing_reminder'] = False
+        return True
+        
+    except ValueError:
+        await update.message.reply_text("❌ Kirim angka ID yang valid!")
+        return True
+
+async def process_new_reminder_data(update: Update, context: CallbackContext):
+    """Memproses data reminder baru untuk edit"""
+    if context.user_data.get('waiting_new_reminder_data'):
+        text = update.message.text.strip()
+        
+        if text == "❌ Batal":
+            context.user_data['waiting_new_reminder_data'] = False
+            context.user_data['edit_id'] = None
+            await update.message.reply_text("❌ Dibatalkan.", reply_markup=REMINDER_KEYBOARD)
+            return True
+        
+        try:
+            parts = text.split('_')
+            if len(parts) < 3:
+                await update.message.reply_text("❌ Format salah! Gunakan: `HH:MM_jadwal_pesan`", parse_mode="Markdown")
+                return True
+            
+            time_part = parts[0]
+            schedule_part = parts[1]
+            message_part = '_'.join(parts[2:])
+            
+            jam, menit = map(int, time_part.split(':'))
+            if not (0 <= jam <= 23 and 0 <= menit <= 59):
+                raise ValueError("Waktu tidak valid")
+            
+            valid_schedules = ['setiap_hari', 'weekday', 'weekend', 
+                              'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu']
+            if schedule_part not in valid_schedules:
+                await update.message.reply_text(f"❌ Jadwal '{schedule_part}' tidak valid!")
+                return True
+            
+            # Update reminder
+            edit_id = context.user_data['edit_id']
+            for r in custom_reminders:
+                if r['id'] == edit_id:
+                    r['time'] = time_part
+                    r['schedule'] = schedule_part
+                    r['message'] = message_part
+                    break
+            
+            context.user_data['waiting_new_reminder_data'] = False
+            context.user_data['edit_id'] = None
+            await update.message.reply_text(
+                f"✅ *Reminder ID {edit_id} berhasil diupdate!*",
+                parse_mode="Markdown",
+                reply_markup=REMINDER_KEYBOARD
+            )
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}", parse_mode="Markdown")
+        return True
+    return False
+
+async def process_delete_reminder(update: Update, context: CallbackContext):
+    """Proses hapus reminder"""
+    text = update.message.text.strip()
+    
+    if text == "❌ Batal":
+        context.user_data['deleting_reminder'] = False
+        await update.message.reply_text("❌ Dibatalkan.", reply_markup=REMINDER_KEYBOARD)
+        return True
+    
+    try:
+        reminder_id = int(text)
+        global custom_reminders
+        reminder = next((r for r in custom_reminders if r['id'] == reminder_id), None)
+        
+        if not reminder:
+            await update.message.reply_text(f"❌ Reminder dengan ID {reminder_id} tidak ditemukan!")
+            return True
+        
+        custom_reminders = [r for r in custom_reminders if r['id'] != reminder_id]
+        # Renumber IDs
+        for i, r in enumerate(custom_reminders, 1):
+            r['id'] = i
+        
+        context.user_data['deleting_reminder'] = False
+        await update.message.reply_text(
+            f"✅ *Reminder ID {reminder_id} berhasil dihapus!*",
+            parse_mode="Markdown",
+            reply_markup=REMINDER_KEYBOARD
+        )
+    except ValueError:
+        await update.message.reply_text("❌ Kirim angka ID yang valid!")
+    return True
+
+async def process_toggle_reminder(update: Update, context: CallbackContext):
+    """Proses aktif/nonaktifkan reminder"""
+    text = update.message.text.strip()
+    
+    if text == "❌ Batal":
+        context.user_data['toggling_reminder'] = False
+        await update.message.reply_text("❌ Dibatalkan.", reply_markup=REMINDER_KEYBOARD)
+        return True
+    
+    try:
+        reminder_id = int(text)
+        reminder = next((r for r in custom_reminders if r['id'] == reminder_id), None)
+        
+        if not reminder:
+            await update.message.reply_text(f"❌ Reminder dengan ID {reminder_id} tidak ditemukan!")
+            return True
+        
+        reminder['enabled'] = not reminder['enabled']
+        status = "diaktifkan" if reminder['enabled'] else "dinonaktifkan"
+        
+        context.user_data['toggling_reminder'] = False
+        await update.message.reply_text(
+            f"✅ *Reminder ID {reminder_id} berhasil {status}!*",
+            parse_mode="Markdown",
+            reply_markup=REMINDER_KEYBOARD
+        )
+    except ValueError:
+        await update.message.reply_text("❌ Kirim angka ID yang valid!")
+    return True
+
+async def handle_reminder_menu(update: Update, context: CallbackContext):
+    """Handle menu reminder"""
+    if not context.user_data.get('reminder_mode'):
+        return False
+    
+    text = update.message.text
+    
+    if text == "🔙 Kembali":
+        context.user_data['reminder_mode'] = False
+        await update.message.reply_text(
+            "Kembali ke menu utama.",
+            reply_markup=MAIN_KEYBOARD
+        )
+        return True
+    
+    elif text == "📋 Lihat Reminder":
+        await list_reminders(update, context)
+        return True
+    
+    elif text == "➕ Buat Reminder Baru":
+        context.user_data['creating_reminder'] = True
+        await update.message.reply_text(
+            "📝 *Buat Reminder Baru*\n\n"
+            "Format: `HH:MM_jadwal_pesan`\n\n"
+            "Contoh:\n"
+            "• `08:00_setiap_hari_Selamat pagi!`\n"
+            "• `14:30_senin_Rapat tim`\n"
+            "• `20:00_weekend_Istirahat`\n\n"
+            "Jadwal bisa: `setiap_hari`, `weekday`, `weekend`, atau hari:\n"
+            "`senin`, `selasa`, `rabu`, `kamis`, `jumat`, `sabtu`, `minggu`\n\n"
+            "Kirim `❌ Batal` untuk membatalkan.",
+            parse_mode="Markdown",
+            reply_markup=CANCEL_KEYBOARD
+        )
+        return True
+    
+    elif text == "✏️ Edit Reminder":
+        await edit_reminder_menu(update, context)
+        return True
+    
+    elif text == "❌ Hapus Reminder":
+        await delete_reminder_menu(update, context)
+        return True
+    
+    elif text == "🔘 Aktif/Nonaktifkan":
+        await toggle_reminder_menu(update, context)
+        return True
+    
+    elif context.user_data.get('creating_reminder'):
+        if text == "❌ Batal":
+            context.user_data['creating_reminder'] = False
+            await update.message.reply_text("❌ Pembatalan reminder.", reply_markup=REMINDER_KEYBOARD)
+            return True
+        
+        # Parse reminder: HH:MM_jadwal_pesan
+        try:
+            parts = text.split('_')
+            if len(parts) < 3:
+                await update.message.reply_text("❌ Format salah! Gunakan: `HH:MM_jadwal_pesan`", parse_mode="Markdown")
+                return True
+            
+            time_part = parts[0]
+            schedule_part = parts[1]
+            message_part = '_'.join(parts[2:])
+            
+            jam, menit = map(int, time_part.split(':'))
+            if not (0 <= jam <= 23 and 0 <= menit <= 59):
+                raise ValueError("Waktu tidak valid")
+            
+            valid_schedules = ['setiap_hari', 'weekday', 'weekend', 
+                              'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu']
+            if schedule_part not in valid_schedules:
+                await update.message.reply_text(f"❌ Jadwal '{schedule_part}' tidak valid!")
+                return True
+            
+            # Simpan reminder
+            custom_reminders.append({
+                'id': len(custom_reminders) + 1,
+                'time': time_part,
+                'schedule': schedule_part,
+                'message': message_part,
+                'enabled': True
+            })
+            
+            context.user_data['creating_reminder'] = False
+            await update.message.reply_text(
+                f"✅ *Reminder berhasil dibuat!*\n\n"
+                f"⏰ Waktu: {time_part} WIB\n"
+                f"📅 Jadwal: {schedule_part}\n"
+                f"📝 Pesan: {message_part}",
+                parse_mode="Markdown",
+                reply_markup=REMINDER_KEYBOARD
+            )
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}\nGunakan format: `HH:MM_jadwal_pesan`", parse_mode="Markdown")
+        return True
+    
+    return False
+
+# ======================================================
+# SCHEDULER MANUAL
 # ======================================================
 async def scheduler_loop(application):
-    """Loop penjadwalan manual (tanpa job_queue)"""
+    """Loop penjadwalan manual dengan semua reminder"""
     wib = pytz.timezone('Asia/Jakarta')
     last_daily = None
     last_monthly = None
@@ -247,7 +635,7 @@ async def scheduler_loop(application):
             today_date = now.date()
             
             # Reminder harian: 00:02 WIB
-            if now.hour == 0 and now.minute == 5:
+            if now.hour == 0 and now.minute == 2:
                 if last_daily != today_date:
                     logging.info(f"⏰ Mengirim reminder harian...")
                     await send_daily_reminder(application)
@@ -262,13 +650,16 @@ async def scheduler_loop(application):
                     last_monthly = today_date
                     await asyncio.sleep(60)
             
+            # Reminder custom
+            await send_reminder_custom(application)
+            
             await asyncio.sleep(30)
         except Exception as e:
             logging.error(f"Error di scheduler: {e}")
             await asyncio.sleep(60)
 
 # ======================================================
-# HANDLER BOT
+# HANDLER BOT UTAMA
 # ======================================================
 async def start(update: Update, context):
     await update.message.reply_text(
@@ -285,10 +676,21 @@ async def start(update: Update, context):
         "✅ *Ukuran A4 (150 DPI)* - Siap cetak!\n\n"
         "⏰ *Reminder Otomatis:*\n"
         "• 📊 Setiap hari jam 00:02 WIB (Input Sales)\n"
-        "• 📋 Tanggal 1 & 16 setiap bulan jam 08:00 WIB (Cetak Tag & Retur)",
+        "• 📋 Tanggal 1 & 16 setiap bulan jam 08:00 WIB (Cetak Tag & Retur)\n"
+        "• 🔔 Reminder custom (ketik /reminder)\n\n"
+        "🔐 *Akses Reminder Custom:* `/reminder`",
         parse_mode="Markdown",
         reply_markup=MAIN_KEYBOARD
     )
+
+async def reminder_command(update: Update, context: CallbackContext):
+    """Command /reminder - meminta password terlebih dahulu"""
+    await update.message.reply_text(
+        "🔐 *Akses Reminder Custom*\n\n"
+        "Silakan masukkan password untuk mengakses pengaturan reminder:",
+        parse_mode="Markdown"
+    )
+    context.user_data['awaiting_password'] = True
 
 async def set_mode(update: Update, context):
     mode = update.message.text.replace('/', '')
@@ -298,7 +700,47 @@ async def set_mode(update: Update, context):
         reply_markup=ForceReply()
     )
 
-async def handle_message(update: Update, context):
+async def test_daily(update: Update, context):
+    """Test kirim reminder harian"""
+    await update.message.reply_text("🔄 Test reminder harian...")
+    await send_daily_reminder(context)
+    await update.message.reply_text("✅ Selesai!")
+
+async def test_monthly(update: Update, context):
+    """Test kirim reminder bulanan"""
+    await update.message.reply_text("🔄 Test reminder bulanan...")
+    await send_monthly_reminder(context)
+    await update.message.reply_text("✅ Selesai!")
+
+async def handle_message(update: Update, context: CallbackContext):
+    # Cek password dulu
+    if await check_password(update, context):
+        return
+    
+    # Cek menu reminder
+    if await handle_reminder_menu(update, context):
+        return
+    
+    # Cek proses edit reminder
+    if await process_new_reminder_data(update, context):
+        return
+    
+    # Cek proses edit reminder (pilih ID)
+    if context.user_data.get('editing_reminder'):
+        if await process_edit_reminder(update, context):
+            return
+    
+    # Cek proses delete reminder
+    if context.user_data.get('deleting_reminder'):
+        if await process_delete_reminder(update, context):
+            return
+    
+    # Cek proses toggle reminder
+    if context.user_data.get('toggling_reminder'):
+        if await process_toggle_reminder(update, context):
+            return
+    
+    # Handle mode cetak harga
     mode = context.user_data.get('mode')
     if not mode:
         await update.message.reply_text("❌ Pilih mode dulu: /paket, /promo, atau /normal")
@@ -385,18 +827,6 @@ async def handle_message(update: Update, context):
     context.user_data['mode'] = None
     await update.message.reply_text("✅ Selesai! Gambar sudah siap cetak di kertas A4.")
 
-async def test_daily(update: Update, context):
-    """Test kirim reminder harian"""
-    await update.message.reply_text("🔄 Test reminder harian...")
-    await send_daily_reminder(context)
-    await update.message.reply_text("✅ Selesai!")
-
-async def test_monthly(update: Update, context):
-    """Test kirim reminder bulanan"""
-    await update.message.reply_text("🔄 Test reminder bulanan...")
-    await send_monthly_reminder(context)
-    await update.message.reply_text("✅ Selesai!")
-
 # ======================================================
 # MAIN FUNCTION
 # ======================================================
@@ -406,12 +836,13 @@ async def main():
         return
     
     print("=" * 50)
-    print("🤖 BOT CETAK HARGA + 2 REMINDER OTOMATIS")
+    print("🤖 BOT CETAK HARGA + REMINDER OTOMATIS")
     print("=" * 50)
     print(f"📱 Group ID: {GROUP_CHAT_ID}")
     print(f"📌 Subtopik MENU ID: {MESSAGE_THREAD_ID}")
     print(f"⏰ Reminder 1: Setiap hari jam 00:02 WIB (Input Sales)")
     print(f"⏰ Reminder 2: Tanggal 1 & 16 jam 08:00 WIB (Cetak Tag & Retur)")
+    print(f"🔐 Reminder Custom: /reminder (password: {ADMIN_PASSWORD})")
     print(f"📐 Ukuran: A4 (150 DPI) - {IMG_W}x{IMG_H} px")
     print("=" * 50)
     
@@ -420,6 +851,7 @@ async def main():
     
     # Handler untuk command
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("reminder", reminder_command))
     application.add_handler(CommandHandler("promo", set_mode))
     application.add_handler(CommandHandler("normal", set_mode))
     application.add_handler(CommandHandler("paket", set_mode))
@@ -432,7 +864,7 @@ async def main():
     # Jalankan scheduler manual di background
     asyncio.create_task(scheduler_loop(application))
     
-    print("✅ Bot berjalan dengan 2 reminder otomatis...")
+    print("✅ Bot berjalan dengan semua reminder otomatis...")
     
     # Jalankan bot
     await application.initialize()
