@@ -247,7 +247,7 @@ async def scheduler_loop(application):
             today_date = now.date()
             
             # Reminder harian: 00:02 WIB
-            if now.hour == 20 and now.minute == 48:
+            if now.hour == 0 and now.minute == 5:
                 if last_daily != today_date:
                     logging.info(f"⏰ Mengirim reminder harian...")
                     await send_daily_reminder(application)
