@@ -8,7 +8,6 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ForceReply
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from PIL import Image, ImageDraw, ImageFont
 import asyncio
-from datetime import datetime as dt
 
 # --- LOGGING ---
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -17,8 +16,8 @@ TOKEN = os.environ.get("TELEGRAM_TOKEN")
 # ======================================================
 # KONFIGURASI GRUP DAN SUBTOPIK
 # ======================================================
-GROUP_CHAT_ID = -1002042735771  # ID grup Anda
-MESSAGE_THREAD_ID = 7956  # ID subtopik MENU
+GROUP_CHAT_ID = -1002042735771
+MESSAGE_THREAD_ID = 7956
 
 # ======================================================
 # KONFIGURASI UKURAN DAN WARNA
@@ -30,7 +29,6 @@ RED_HEADER = (220, 0, 0)
 RED_SHADOW = (160, 0, 0)
 RED_LINE = (255, 0, 0)
 
-# Ukuran A4 (150 DPI)
 A4_W = 1240
 A4_H = 1754
 MARGIN = 15
@@ -46,7 +44,6 @@ START_X = MARGIN
 START_Y = MARGIN
 GAP = 5
 
-# Keyboard 3 tombol utama
 MAIN_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("/promo"), KeyboardButton("/normal")],
     [KeyboardButton("/paket")]
@@ -105,10 +102,6 @@ def get_current_date_wib():
         9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
     }
     return f"{now.day} {bulan_indonesia[now.month]} {now.year}"
-
-def is_date_match(today, target_dates):
-    """Cek apakah tanggal hari ini termasuk dalam target_dates"""
-    return today.day in target_dates
 
 # ======================================================
 # FUNGSI GAMBAR KARTU
@@ -199,10 +192,9 @@ def parse_input_paket(line):
     return {'harga_normal': harga_awal, 'harga_spesial': harga_promo, 'qty': min(qty, 100)}
 
 # ======================================================
-# REMINDER 1: HARIAN (Jam 00:02 WIB)
+# REMINDER FUNCTIONS
 # ======================================================
 async def send_daily_reminder(context: CallbackContext):
-    """Mengirim pesan setiap hari jam 00:02 WIB ke subtopik MENU"""
     try:
         tanggal_sekarang = get_current_date_wib()
         pesan = (
@@ -217,20 +209,12 @@ async def send_daily_reminder(context: CallbackContext):
             text=pesan,
             parse_mode="Markdown"
         )
-        logging.info(f"✅ Reminder HARIAN terkirim ke grup {GROUP_CHAT_ID}")
+        logging.info(f"✅ Reminder HARIAN terkirim")
     except Exception as e:
         logging.error(f"❌ Gagal kirim reminder harian: {e}")
 
-# ======================================================
-# REMINDER 2: BULANAN (Tanggal 1 dan 16, Jam 08:00 WIB)
-# ======================================================
 async def send_monthly_reminder(context: CallbackContext):
-    """Mengirim pesan setiap tanggal 1 dan 16 jam 08:00 WIB"""
     try:
-        wib = pytz.timezone('Asia/Jakarta')
-        now = datetime.now(wib)
-        tanggal = now.day
-        
         pesan = (
             f"📋 *Reminder Cetak & Retur*\n\n"
             f"Segera cetak Tag N, R, F dan Non Category\n"
@@ -244,65 +228,44 @@ async def send_monthly_reminder(context: CallbackContext):
             text=pesan,
             parse_mode="Markdown"
         )
-        logging.info(f"✅ Reminder BULANAN (tgl {tanggal}) terkirim ke grup {GROUP_CHAT_ID}")
+        logging.info(f"✅ Reminder BULANAN terkirim")
     except Exception as e:
         logging.error(f"❌ Gagal kirim reminder bulanan: {e}")
 
 # ======================================================
-# FUNGSI SCHEDULER UNTUK REMINDER BULANAN
+# SCHEDULER MANUAL UNTUK RAILWAY
 # ======================================================
-async def check_monthly_reminder(context: CallbackContext):
-    """
-    Fungsi ini berjalan setiap jam untuk mengecek 
-    apakah hari ini tanggal 1 atau 16, dan jam 08:00
-    """
+async def scheduler_loop(application):
+    """Loop penjadwalan manual (tanpa job_queue)"""
     wib = pytz.timezone('Asia/Jakarta')
-    now = datetime.now(wib)
+    last_daily = None
+    last_monthly = None
     
-    # Cek apakah tanggal hari ini 1 atau 16
-    if now.day in [1, 16]:
-        # Cek apakah jam 08:00 (antara 08:00:00 sampai 08:01:00)
-        if now.hour == 8 and now.minute < 5:  # Tolerance 5 menit
-            await send_monthly_reminder(context)
-
-async def start_schedulers(application: Application):
-    """
-    Menjadwalkan kedua reminder:
-    1. Reminder harian: setiap jam 00:02 WIB
-    2. Reminder bulanan: cek setiap jam 08:00 untuk tanggal 1 dan 16
-    """
-    wib = pytz.timezone('Asia/Jakarta')
-    
-    # ========== REMINDER 1: HARIAN ==========
-    # Hapus job lama jika ada
-    for job in application.job_queue.jobs():
-        if job.name == 'daily_sales_reminder':
-            job.schedule_removal()
-    
-    send_time_daily = time(hour=0, minute=2, tzinfo=wib)
-    application.job_queue.run_daily(
-        send_daily_reminder,
-        time=send_time_daily,
-        days=tuple(range(7)),
-        name='daily_sales_reminder'
-    )
-    logging.info(f"⏰ Reminder HARIAN aktif setiap {send_time_daily} WIB")
-    
-    # ========== REMINDER 2: BULANAN (Cek setiap jam 08:00) ==========
-    # Hapus job lama jika ada
-    for job in application.job_queue.jobs():
-        if job.name == 'monthly_check_reminder':
-            job.schedule_removal()
-    
-    # Cek setiap jam 08:00 untuk mengetahui apakah tanggal 1 atau 16
-    send_time_monthly = time(hour=8, minute=0, tzinfo=wib)
-    application.job_queue.run_daily(
-        check_monthly_reminder,
-        time=send_time_monthly,
-        days=tuple(range(7)),
-        name='monthly_check_reminder'
-    )
-    logging.info(f"⏰ Reminder BULANAN aktif setiap {send_time_monthly} WIB (cek tgl 1 & 16)")
+    while True:
+        try:
+            now = datetime.now(wib)
+            today_date = now.date()
+            
+            # Reminder harian: 00:02 WIB
+            if now.hour == 20 and now.minute == 48:
+                if last_daily != today_date:
+                    logging.info(f"⏰ Mengirim reminder harian...")
+                    await send_daily_reminder(application)
+                    last_daily = today_date
+                    await asyncio.sleep(60)
+            
+            # Reminder bulanan: tgl 1 atau 16 jam 08:00 WIB
+            if (now.day == 1 or now.day == 16) and now.hour == 8 and now.minute == 0:
+                if last_monthly != today_date:
+                    logging.info(f"⏰ Mengirim reminder bulanan...")
+                    await send_monthly_reminder(application)
+                    last_monthly = today_date
+                    await asyncio.sleep(60)
+            
+            await asyncio.sleep(30)
+        except Exception as e:
+            logging.error(f"Error di scheduler: {e}")
+            await asyncio.sleep(60)
 
 # ======================================================
 # HANDLER BOT
@@ -422,10 +385,22 @@ async def handle_message(update: Update, context):
     context.user_data['mode'] = None
     await update.message.reply_text("✅ Selesai! Gambar sudah siap cetak di kertas A4.")
 
+async def test_daily(update: Update, context):
+    """Test kirim reminder harian"""
+    await update.message.reply_text("🔄 Test reminder harian...")
+    await send_daily_reminder(context)
+    await update.message.reply_text("✅ Selesai!")
+
+async def test_monthly(update: Update, context):
+    """Test kirim reminder bulanan"""
+    await update.message.reply_text("🔄 Test reminder bulanan...")
+    await send_monthly_reminder(context)
+    await update.message.reply_text("✅ Selesai!")
+
 # ======================================================
 # MAIN FUNCTION
 # ======================================================
-def main():
+async def main():
     if not TOKEN:
         print("❌ ERROR: TELEGRAM_TOKEN tidak ditemukan!")
         return
@@ -440,24 +415,38 @@ def main():
     print(f"📐 Ukuran: A4 (150 DPI) - {IMG_W}x{IMG_H} px")
     print("=" * 50)
     
+    # Buat aplikasi
     application = Application.builder().token(TOKEN).build()
     
-    # Handler untuk command utama
+    # Handler untuk command
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("promo", set_mode))
     application.add_handler(CommandHandler("normal", set_mode))
     application.add_handler(CommandHandler("paket", set_mode))
+    application.add_handler(CommandHandler("test_daily", test_daily))
+    application.add_handler(CommandHandler("test_monthly", test_monthly))
     
     # Handler untuk pesan biasa
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Jalankan kedua scheduler
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.create_task(start_schedulers(application))
+    # Jalankan scheduler manual di background
+    asyncio.create_task(scheduler_loop(application))
     
     print("✅ Bot berjalan dengan 2 reminder otomatis...")
-    application.run_polling()
+    
+    # Jalankan bot
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    
+    # Keep running
+    try:
+        await asyncio.Event().wait()
+    except KeyboardInterrupt:
+        print("\n❌ Bot berhenti")
+        await application.updater.stop()
+        await application.stop()
+        await application.shutdown()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
