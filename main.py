@@ -53,7 +53,7 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup([
 # SISTEM REMINDER CUSTOM
 # ======================================================
 custom_reminders = []
-ADMIN_PASSWORD = "Reminder23"
+ADMIN_PASSWORD = "admin123"
 
 REMINDER_KEYBOARD = ReplyKeyboardMarkup([
     ["📋 Lihat Reminder", "➕ Buat Reminder Baru"],
