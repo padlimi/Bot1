@@ -50,7 +50,7 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup([
 ], resize_keyboard=True, one_time_keyboard=False)
 
 # ======================================================
-# SISTEM REMINDER CUSTOM (RAHASIA)
+# SISTEM REMINDER CUSTOM
 # ======================================================
 custom_reminders = []
 ADMIN_PASSWORD = "Reminder23"
@@ -206,7 +206,7 @@ def parse_input_paket(line):
     return {'harga_normal': harga_awal, 'harga_spesial': harga_promo, 'qty': min(qty, 100)}
 
 # ======================================================
-# REMINDER CUSTOM FUNCTIONS (RAHASIA)
+# REMINDER CUSTOM FUNCTIONS
 # ======================================================
 async def send_reminder_custom(context: CallbackContext):
     """Mengirim reminder custom yang sudah dijadwalkan"""
@@ -262,11 +262,6 @@ async def check_password(update: Update, context: CallbackContext):
             context.user_data['awaiting_password'] = False
         return True
     return False
-
-async def reminder_command(update: Update, context: CallbackContext):
-    """Handler untuk perintah /reminder (rahasia)"""
-    await update.message.reply_text("🔐 *Masukkan password:*", parse_mode="Markdown")
-    context.user_data['awaiting_password'] = True
 
 async def list_reminders(update: Update, context: CallbackContext):
     if not custom_reminders:
@@ -485,13 +480,57 @@ async def process_toggle_reminder(update: Update, context: CallbackContext):
         await update.message.reply_text("❌ Kirim angka ID yang valid!")
     return True
 
-async def process_create_reminder(update: Update, context: CallbackContext):
-    if context.user_data.get('creating_reminder'):
-        text = update.message.text.strip()
-        
+async def handle_reminder_menu(update: Update, context: CallbackContext):
+    if not context.user_data.get('reminder_mode'):
+        return False
+    
+    text = update.message.text
+    
+    if text == "🔙 Kembali":
+        context.user_data['reminder_mode'] = False
+        await update.message.reply_text(
+            "Kembali ke menu utama.",
+            reply_markup=MAIN_KEYBOARD
+        )
+        return True
+    
+    elif text == "📋 Lihat Reminder":
+        await list_reminders(update, context)
+        return True
+    
+    elif text == "➕ Buat Reminder Baru":
+        context.user_data['creating_reminder'] = True
+        await update.message.reply_text(
+            "📝 *Buat Reminder Baru*\n\n"
+            "Format: `HH:MM_jadwal_pesan`\n\n"
+            "Contoh:\n"
+            "• `08:00_setiaphari_Selamat pagi!`\n"
+            "• `14:30_senin_Rapat tim`\n"
+            "• `20:00_weekend_Istirahat`\n\n"
+            "Jadwal bisa: `setiaphari`, `weekday`, `weekend`, atau hari:\n"
+            "`senin`, `selasa`, `rabu`, `kamis`, `jumat`, `sabtu`, `minggu`\n\n"
+            "Kirim `❌ Batal` untuk membatalkan.",
+            parse_mode="Markdown",
+            reply_markup=CANCEL_KEYBOARD
+        )
+        return True
+    
+    elif text == "✏️ Edit Reminder":
+        await edit_reminder_menu(update, context)
+        return True
+    
+    elif text == "❌ Hapus Reminder":
+        await delete_reminder_menu(update, context)
+        return True
+    
+    elif text == "🔘 Aktif/Nonaktifkan":
+        await toggle_reminder_menu(update, context)
+        return True
+    
+    elif context.user_data.get('creating_reminder'):
         if text == "❌ Batal":
             context.user_data['creating_reminder'] = False
-            await update.message.reply_text("❌ Dibatalkan.", reply_markup=REMINDER_KEYBOARD)
+            await update.message.reply_text("❌ Pembatalan reminder.", reply_markup=REMINDER_KEYBOARD)
             return True
         
         try:
@@ -528,9 +567,8 @@ async def process_create_reminder(update: Update, context: CallbackContext):
                 )
                 return True
             
-            new_id = len(custom_reminders) + 1
             custom_reminders.append({
-                'id': new_id,
+                'id': len(custom_reminders) + 1,
                 'time': time_part,
                 'schedule': schedule_part,
                 'message': message_part,
@@ -539,118 +577,43 @@ async def process_create_reminder(update: Update, context: CallbackContext):
             
             context.user_data['creating_reminder'] = False
             await update.message.reply_text(
-                f"✅ *Reminder berhasil dibuat!*\n\nID: {new_id}\n⏰ {time_part} WIB\n📅 {schedule_part}\n📝 {message_part}",
+                f"✅ *Reminder berhasil dibuat!*\n\n"
+                f"⏰ Waktu: {time_part} WIB\n"
+                f"📅 Jadwal: {schedule_part}\n"
+                f"📝 Pesan: {message_part}",
                 parse_mode="Markdown",
                 reply_markup=REMINDER_KEYBOARD
             )
         except Exception as e:
-            await update.message.reply_text(f"❌ Error: {e}", parse_mode="Markdown")
-        return True
-    return False
-
-async def handle_reminder_menu(update: Update, context: CallbackContext):
-    if not context.user_data.get('reminder_mode'):
-        return False
-    
-    text = update.message.text
-    
-    if text == "🔙 Kembali":
-        context.user_data['reminder_mode'] = False
-        await update.message.reply_text("Kembali ke menu utama.", reply_markup=MAIN_KEYBOARD)
-        return True
-    elif text == "📋 Lihat Reminder":
-        await list_reminders(update, context)
-        return True
-    elif text == "➕ Buat Reminder Baru":
-        await update.message.reply_text(
-            "➕ *Buat Reminder Baru*\n\n"
-            "Kirim dengan format: `HH:MM_jadwal_pesan`\n\n"
-            "Contoh:\n"
-            "• `09:00_setiaphari_Selamat pagi!`\n"
-            "• `15:30_weekday_Segera absen pulang`\n"
-            "• `08:00_senin_Rapat mingguan`\n\n"
-            "Jadwal yang tersedia:\n"
-            "`setiaphari`, `weekday`, `weekend`, `senin`, `selasa`, `rabu`, `kamis`, `jumat`, `sabtu`, `minggu`\n\n"
-            "Kirim `❌ Batal` untuk membatalkan.",
-            parse_mode="Markdown",
-            reply_markup=CANCEL_KEYBOARD
-        )
-        context.user_data['creating_reminder'] = True
-        return True
-    elif text == "✏️ Edit Reminder":
-        await edit_reminder_menu(update, context)
-        return True
-    elif text == "❌ Hapus Reminder":
-        await delete_reminder_menu(update, context)
-        return True
-    elif text == "🔘 Aktif/Nonaktifkan":
-        await toggle_reminder_menu(update, context)
-        return True
-    
-    return False
-
-# ======================================================
-# FUNGSI GENERATE GAMBAR
-# ======================================================
-async def generate_images(items, mode, update, context):
-    try:
-        await update.message.reply_text(f"🖨️ *Membuat {mode}...*\nTotal: {len(items)} item", parse_mode="Markdown")
-        
-        total_items = len(items)
-        num_images = math.ceil(total_items / ITEMS_PER_IMAGE)
-        images_data = []
-        
-        for img_idx in range(num_images):
-            img = Image.new('RGB', (IMG_W, IMG_H), WHITE)
-            draw = ImageDraw.Draw(img)
-            draw.rectangle([0, 0, IMG_W-1, IMG_H-1], outline=BLACK, width=5)
-            date_str = get_current_date_wib()
-            draw.text((IMG_W - 30, 30), date_str, fill=BLACK, anchor="rt", font=get_font(28, bold=False))
-            
-            start_item = img_idx * ITEMS_PER_IMAGE
-            end_item = min(start_item + ITEMS_PER_IMAGE, total_items)
-            
-            for idx, item in enumerate(items[start_item:end_item]):
-                row = idx // COLS
-                col = idx % COLS
-                x = START_X + col * (CELL_W + GAP)
-                y = START_Y + row * (CELL_H + GAP)
-                
-                if mode == "PAKET":
-                    draw_paket(draw, x, y, item['harga_normal'], item['harga_spesial'])
-                elif mode == "PROMO":
-                    draw_promo(draw, x, y, item['nama'], item['harga'])
-                else:
-                    draw_normal(draw, x, y, item['nama'], item['harga'])
-            
-            img_bytes = io.BytesIO()
-            img.save(img_bytes, format='PNG', dpi=(150, 150))
-            img_bytes.seek(0)
-            images_data.append(img_bytes)
-        
-        for img_data in images_data:
-            await context.bot.send_photo(
-                chat_id=update.effective_chat.id,
-                photo=img_data,
-                reply_to_message_id=update.message.message_id
+            await update.message.reply_text(
+                f"❌ Error: {e}\n\n"
+                f"Gunakan format: `HH:MM_jadwal_pesan`\n"
+                f"Contoh: `15:30_setiaphari_Segera absen pulang`",
+                parse_mode="Markdown"
             )
-            await asyncio.sleep(1)
-        
-        await update.message.reply_text(
-            f"✅ *Selesai!*\n"
-            f"📄 {num_images} halaman A4\n"
-            f"🖼️ {len(items)} item tercetak",
-            parse_mode="Markdown",
-            reply_markup=MAIN_KEYBOARD
-        )
-    except Exception as e:
-        await update.message.reply_text(f"❌ Gagal membuat gambar: {str(e)}")
+        return True
+    
+    return False
 
 # ======================================================
-# HANDLER COMMANDS
+# SCHEDULER MANUAL (HANYA REMINDER CUSTOM)
 # ======================================================
-async def start(update: Update, context: CallbackContext):
-    welcome_text = (
+async def scheduler_loop(application):
+    """Loop penjadwalan hanya untuk reminder custom"""
+    while True:
+        try:
+            # Hanya reminder custom
+            await send_reminder_custom(application)
+            await asyncio.sleep(30)
+        except Exception as e:
+            logging.error(f"Error di scheduler: {e}")
+            await asyncio.sleep(60)
+
+# ======================================================
+# HANDLER BOT UTAMA
+# ======================================================
+async def start(update: Update, context):
+    await update.message.reply_text(
         "🎨 *Bot Cetak Harga Mewah - Format A4*\n\n"
         "📦 *Mode PAKET* (2 harga)\n"
         "Format: `harga_normal.harga_promo.qty`\n"
@@ -661,152 +624,191 @@ async def start(update: Update, context: CallbackContext):
         "📄 *Mode NORMAL*\n"
         "Format: `nama.harga`\n"
         "Contoh: `Beras Premium.75000`\n\n"
-        "✅ Ukuran A4 (150 DPI) - Siap cetak!\n\n"
-        "Gunakan tombol di bawah untuk memilih mode:"
+        "✅ *Ukuran A4 (150 DPI)* - Siap cetak!\n\n"
+        "🔔 *Reminder Custom:*\n"
+        "• Ketik /reminder untuk mengakses\n"
+        "• Buat reminder sesuai kebutuhan\n\n"
+        "🔐 *Akses Reminder:* `/reminder` (password: admin123)",
+        parse_mode="Markdown",
+        reply_markup=MAIN_KEYBOARD
     )
-    await update.message.reply_text(welcome_text, parse_mode="Markdown", reply_markup=MAIN_KEYBOARD)
 
-async def promo_mode(update: Update, context: CallbackContext):
-    context.user_data['mode'] = 'promo'
+async def reminder_command(update: Update, context: CallbackContext):
     await update.message.reply_text(
-        "🔥 *Mode PROMO*\n\n"
-        "Kirim data dengan format:\n"
-        "`nama.harga`\n\n"
-        "Contoh:\n"
-        "`Indomie Goreng.3500`\n"
-        "`Aqua 600ml.2500`\n\n"
-        "Kirim beberapa item (pisahkan dengan koma atau baris baru):\n"
-        "`Indomie.3500, Aqua.2500, Pepsodent.8000`\n\n"
-        "Kirim *selesai* untuk mulai mencetak.",
+        "🔐 *Akses Reminder*\n\n"
+        "Silakan masukkan password untuk mengakses pengaturan reminder:",
         parse_mode="Markdown"
     )
+    context.user_data['awaiting_password'] = True
 
-async def normal_mode(update: Update, context: CallbackContext):
-    context.user_data['mode'] = 'normal'
+async def set_mode(update: Update, context):
+    mode = update.message.text.replace('/', '')
+    context.user_data['mode'] = mode
     await update.message.reply_text(
-        "📄 *Mode NORMAL*\n\n"
-        "Kirim data dengan format:\n"
-        "`nama.harga`\n\n"
-        "Contoh:\n"
-        "`Beras Premium.75000`\n"
-        "`Minyak Goreng.15000`\n\n"
-        "Kirim beberapa item (pisahkan dengan koma atau baris baru):\n"
-        "`Beras.75000, Minyak.15000, Gula.13000`\n\n"
-        "Kirim *selesai* untuk mulai mencetak.",
-        parse_mode="Markdown"
+        f"✅ Mode {mode.upper()} aktif - Kirim data sekarang:",
+        reply_markup=ForceReply()
     )
 
-async def paket_mode(update: Update, context: CallbackContext):
-    context.user_data['mode'] = 'paket'
-    await update.message.reply_text(
-        "📦 *Mode PAKET*\n\n"
-        "Kirim data dengan format:\n"
-        "`harga_normal.harga_promo.qty`\n\n"
-        "Contoh:\n"
-        "`600000.70000.3` (Qty 3)\n"
-        "`500000.65000.1` (Qty 1)\n\n"
-        "Kirim beberapa item (pisahkan dengan koma atau baris baru):\n"
-        "`600000.70000.3, 500000.65000.1`\n\n"
-        "Kirim *selesai* untuk mulai mencetak.",
-        parse_mode="Markdown"
-    )
-
-async def process_items(update: Update, context: CallbackContext):
-    if 'mode' not in context.user_data:
-        await update.message.reply_text("❌ Pilih mode terlebih dahulu! Gunakan tombol di bawah.")
+async def handle_message(update: Update, context: CallbackContext):
+    # Cek password dulu
+    if await check_password(update, context):
+        return
+    
+    # Cek menu reminder
+    if await handle_reminder_menu(update, context):
+        return
+    
+    # Cek proses edit reminder
+    if await process_new_reminder_data(update, context):
+        return
+    
+    # Cek proses edit reminder (pilih ID)
+    if context.user_data.get('editing_reminder'):
+        if await process_edit_reminder(update, context):
+            return
+    
+    # Cek proses delete reminder
+    if context.user_data.get('deleting_reminder'):
+        if await process_delete_reminder(update, context):
+            return
+    
+    # Cek proses toggle reminder
+    if context.user_data.get('toggling_reminder'):
+        if await process_toggle_reminder(update, context):
+            return
+    
+    # Handle mode cetak harga
+    mode = context.user_data.get('mode')
+    if not mode:
+        await update.message.reply_text("❌ Pilih mode dulu: /paket, /promo, atau /normal")
         return
     
     text = update.message.text.strip()
-    if text.lower() == 'selesai':
-        if 'items' in context.user_data and context.user_data['items']:
-            await generate_images(context.user_data['items'], context.user_data['mode'], update, context)
-            context.user_data['items'] = []
-        else:
-            await update.message.reply_text("📭 Tidak ada data untuk dicetak.")
-        return
+    lines = text.split('\n')
     
-    mode = context.user_data['mode']
-    items = []
+    all_items = []
+    errors = []
     
-    if ',' in text:
-        lines = [item.strip() for item in text.split(',')]
-    else:
-        lines = text.split('\n')
-    
-    for line in lines:
+    for line_num, line in enumerate(lines, 1):
         line = line.strip()
         if not line:
             continue
         
-        if mode == 'paket':
-            item = parse_input_paket(line)
-            if item:
-                items.append(item)
+        try:
+            if mode == 'paket':
+                item = parse_input_paket(line)
+                if item:
+                    for _ in range(item['qty']):
+                        all_items.append({
+                            'harga_normal': item['harga_normal'],
+                            'harga_spesial': item['harga_spesial']
+                        })
+                else:
+                    errors.append(f"Baris {line_num}: format salah (contoh: 600000.70000.2)")
             else:
-                await update.message.reply_text(f"❌ Format salah: `{line}`\nGunakan: `harga_normal.harga_promo.qty`", parse_mode="Markdown")
-                return
-        else:
-            parts = line.split('.')
-            if len(parts) >= 2:
+                parts = line.split('.')
+                if len(parts) < 2:
+                    errors.append(f"Baris {line_num}: format salah (contoh: Nama.5000)")
+                    continue
                 nama = '.'.join(parts[:-1]).strip()
                 harga = parts[-1].strip()
-                if mode == 'promo':
-                    items.append({'nama': nama, 'harga': harga})
-                else:
-                    items.append({'nama': nama, 'harga': harga})
-            else:
-                await update.message.reply_text(f"❌ Format salah: `{line}`\nGunakan: `nama.harga`", parse_mode="Markdown")
-                return
+                all_items.append({'nama': nama, 'harga': harga})
+        except Exception as e:
+            errors.append(f"Baris {line_num}: {str(e)}")
     
-    if 'items' not in context.user_data:
-        context.user_data['items'] = []
-    
-    context.user_data['items'].extend(items)
-    total = len(context.user_data['items'])
-    await update.message.reply_text(f"✅ Menambahkan {len(items)} item. Total: {total}\nKirim *selesai* untuk mencetak.", parse_mode="Markdown")
-
-async def cancel(update: Update, context: CallbackContext):
-    context.user_data.clear()
-    await update.message.reply_text("❌ Dibatalkan. Gunakan tombol untuk memulai lagi.", reply_markup=MAIN_KEYBOARD)
-
-# ======================================================
-# MAIN
-# ======================================================
-def main():
-    if not TOKEN:
-        logging.error("❌ TELEGRAM_TOKEN tidak ditemukan!")
+    if errors:
+        await update.message.reply_text("⚠️ *Error:*\n" + "\n".join(errors[:5]), parse_mode="Markdown")
         return
     
-    app = Application.builder().token(TOKEN).build()
+    if not all_items:
+        await update.message.reply_text("❌ Tidak ada data valid.")
+        return
     
-    # Command untuk reminder (rahasia)
-    app.add_handler(CommandHandler("reminder", reminder_command))
+    await update.message.reply_text(f"🖨️ Memproses {len(all_items)} item... (Ukuran A4 150 DPI)")
     
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("promo", promo_mode))
-    app.add_handler(CommandHandler("normal", normal_mode))
-    app.add_handler(CommandHandler("paket", paket_mode))
-    app.add_handler(CommandHandler("cancel", cancel))
+    if len(all_items) > 200:
+        await update.message.reply_text("⚠️ Maksimal 200 item, sisanya diabaikan.")
+        all_items = all_items[:200]
     
-    # Message handlers
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, 
-                                   lambda update, context: process_items(update, context) if not any([
-                                       check_password(update, context),
-                                       process_create_reminder(update, context),
-                                       process_edit_reminder(update, context),
-                                       process_delete_reminder(update, context),
-                                       process_toggle_reminder(update, context),
-                                       process_new_reminder_data(update, context),
-                                       handle_reminder_menu(update, context)
-                                   ]) else None))
+    num_images = math.ceil(len(all_items) / ITEMS_PER_IMAGE)
     
-    # Job untuk reminder
-    job_queue = app.job_queue
-    if job_queue:
-        job_queue.run_repeating(send_reminder_custom, interval=30, first=10)
+    for img_idx in range(num_images):
+        start_idx = img_idx * ITEMS_PER_IMAGE
+        batch = all_items[start_idx:start_idx + ITEMS_PER_IMAGE]
+        
+        img = Image.new('RGB', (IMG_W, IMG_H), color=WHITE)
+        draw = ImageDraw.Draw(img)
+        
+        for idx in range(ITEMS_PER_IMAGE):
+            row = idx // COLS
+            col = idx % COLS
+            x_pos = START_X + col * (CELL_W + GAP)
+            y_pos = START_Y + row * (CELL_H + GAP)
+            
+            if idx < len(batch):
+                item = batch[idx]
+                if mode == 'paket':
+                    draw_paket(draw, x_pos, y_pos, item['harga_normal'], item['harga_spesial'])
+                elif mode == 'promo':
+                    draw_promo(draw, x_pos, y_pos, item['nama'], item['harga'])
+                else:
+                    draw_normal(draw, x_pos, y_pos, item['nama'], item['harga'])
+        
+        bio = io.BytesIO()
+        img.save(bio, format='PNG', dpi=(150, 150))
+        bio.seek(0)
+        
+        caption = f"📸 Halaman {img_idx + 1}/{num_images} (A4 150 DPI - siap cetak)"
+        await update.message.reply_photo(photo=bio, caption=caption, reply_markup=MAIN_KEYBOARD)
     
-    logging.info("✅ Bot mulai berjalan...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    context.user_data['mode'] = None
+    await update.message.reply_text("✅ Selesai! Gambar sudah siap cetak di kertas A4.")
+
+# ======================================================
+# MAIN FUNCTION
+# ======================================================
+async def main():
+    if not TOKEN:
+        print("❌ ERROR: TELEGRAM_TOKEN tidak ditemukan!")
+        return
+    
+    print("=" * 50)
+    print("🤖 BOT CETAK HARGA + REMINDER CUSTOM")
+    print("=" * 50)
+    print(f"📱 Group ID: {GROUP_CHAT_ID}")
+    print(f"📌 Subtopik MENU ID: {MESSAGE_THREAD_ID}")
+    print(f"🔐 Reminder Custom: /reminder (password: {ADMIN_PASSWORD})")
+    print(f"📐 Ukuran: A4 (150 DPI) - {IMG_W}x{IMG_H} px")
+    print("=" * 50)
+    
+    application = Application.builder().token(TOKEN).build()
+    
+    # Handler untuk command
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("reminder", reminder_command))
+    application.add_handler(CommandHandler("promo", set_mode))
+    application.add_handler(CommandHandler("normal", set_mode))
+    application.add_handler(CommandHandler("paket", set_mode))
+    
+    # Handler untuk pesan biasa
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Jalankan scheduler manual di background (hanya reminder custom)
+    asyncio.create_task(scheduler_loop(application))
+    
+    print("✅ Bot berjalan dengan reminder custom...")
+    
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    
+    try:
+        await asyncio.Event().wait()
+    except KeyboardInterrupt:
+        print("\n❌ Bot berhenti")
+        await application.updater.stop()
+        await application.stop()
+        await application.shutdown()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
