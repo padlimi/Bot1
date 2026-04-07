@@ -747,10 +747,7 @@ async def start(update: Update, context):
         "✅ *Ukuran A4 (150 DPI)* - Siap cetak!\n\n"
         "🔔 *Reminder Custom:*\n"
         "• Ketik /reminder untuk mengakses\n"
-        "• Buat reminder sesuai kebutuhan\n"
-        "• Jadwal 2 minggu sekali: `2minggu_senin`, `2minggu_jumat`, dll\n"
-        "• Jadwal tanggal: `tanggal` dengan format `tanggal|pesan`\n\n"
-        "🔐 *Akses Reminder:* `/reminder` (password: Reminder23)",
+        "• Buat reminder sesuai kebutuhan\n",
         parse_mode="Markdown",
         reply_markup=MAIN_KEYBOARD
     )
