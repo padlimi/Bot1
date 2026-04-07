@@ -206,7 +206,7 @@ def parse_input_paket(line):
     return {'harga_normal': harga_awal, 'harga_spesial': harga_promo, 'qty': min(qty, 100)}
 
 # ======================================================
-# REMINDER CUSTOM FUNCTIONS
+# REMINDER CUSTOM FUNCTIONS (UPDATED)
 # ======================================================
 async def send_reminder_custom(context: CallbackContext):
     """Mengirim reminder custom yang sudah dijadwalkan"""
@@ -214,6 +214,7 @@ async def send_reminder_custom(context: CallbackContext):
         wib = pytz.timezone('Asia/Jakarta')
         now = datetime.now(wib)
         hari_ini = now.strftime('%A').lower()
+        tanggal_hari_ini = now.day
         
         hari_map_eng = {
             'monday': 'senin', 'tuesday': 'selasa', 'wednesday': 'rabu',
@@ -223,12 +224,40 @@ async def send_reminder_custom(context: CallbackContext):
         
         for reminder in custom_reminders:
             if reminder.get('enabled', True):
-                if reminder['schedule'] == 'setiaphari':
+                waktu_ok = False
+                
+                # Jadwal 2 MINGGU SEKALI (untuk berbagai hari)
+                if reminder['schedule'].startswith('2minggu_'):
+                    hari_target = reminder['schedule'].replace('2minggu_', '')
+                    epoch_days = now.toordinal()
+                    if (epoch_days // 14) % 2 == 0 and hari_ini == hari_target:
+                        waktu_ok = True
+                
+                # Jadwal SETIAP TANGGAL
+                elif reminder['schedule'] == 'tanggal':
+                    try:
+                        if '|' in reminder['message']:
+                            tgl_str, pesan_asli = reminder['message'].split('|', 1)
+                            target_tanggal = int(tgl_str)
+                            reminder['message'] = pesan_asli
+                            if tanggal_hari_ini == target_tanggal:
+                                waktu_ok = True
+                    except:
+                        pass
+                
+                # Jadwal SETIAP HARI
+                elif reminder['schedule'] == 'setiaphari':
                     waktu_ok = True
+                
+                # Jadwal WEEKDAY (Senin-Jumat)
                 elif reminder['schedule'] == 'weekday':
                     waktu_ok = hari_ini not in ['sabtu', 'minggu']
+                
+                # Jadwal WEEKEND
                 elif reminder['schedule'] == 'weekend':
                     waktu_ok = hari_ini in ['sabtu', 'minggu']
+                
+                # Jadwal HARI TERTENTU
                 else:
                     waktu_ok = reminder['schedule'] == hari_ini
                 
@@ -344,7 +373,10 @@ async def process_edit_reminder(update: Update, context: CallbackContext):
         await update.message.reply_text(
             f"✏️ *Edit Reminder ID {reminder_id}*\n\n"
             f"Format baru: `HH:MM_jadwal_pesan`\n\n"
-            f"Contoh: `09:00_senin_Rapat pagi`\n\n"
+            f"Contoh:\n"
+            f"• `09:00_senin_Rapat pagi`\n"
+            f"• `08:00_2minggu_senin_Rapat 2 minggu`\n"
+            f"• `10:00_tanggal_15|Bayar tagihan`\n\n"
             f"Kirim `❌ Batal` untuk membatalkan.",
             parse_mode="Markdown"
         )
@@ -386,8 +418,11 @@ async def process_new_reminder_data(update: Update, context: CallbackContext):
             if not (0 <= jam <= 23 and 0 <= menit <= 59):
                 raise ValueError("Waktu tidak valid")
             
-            valid_schedules = ['setiaphari', 'weekday', 'weekend', 
-                              'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu']
+            valid_schedules = ['setiaphari', 'weekday', 'weekend', 'tanggal',
+                               '2minggu_senin', '2minggu_selasa', '2minggu_rabu', 
+                               '2minggu_kamis', '2minggu_jumat', '2minggu_sabtu', '2minggu_minggu',
+                               'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu']
+            
             if schedule_part not in valid_schedules:
                 await update.message.reply_text(
                     f"❌ Jadwal '{schedule_part}' tidak valid!\n\n"
@@ -395,28 +430,78 @@ async def process_new_reminder_data(update: Update, context: CallbackContext):
                     f"• `setiaphari` - Setiap hari\n"
                     f"• `weekday` - Senin s/d Jumat\n"
                     f"• `weekend` - Sabtu & Minggu\n"
-                    f"• `senin`, `selasa`, `rabu`, `kamis`, `jumat`, `sabtu`, `minggu`",
+                    f"• `2minggu_senin` hingga `2minggu_minggu` - 2 minggu sekali di hari tertentu\n"
+                    f"• `tanggal` - Setiap tanggal tertentu\n"
+                    f"• `senin` hingga `minggu` - Setiap minggu di hari tertentu",
                     parse_mode="Markdown"
                 )
                 return True
             
-            edit_id = context.user_data['edit_id']
-            for r in custom_reminders:
-                if r['id'] == edit_id:
-                    r['time'] = time_part
-                    r['schedule'] = schedule_part
-                    r['message'] = message_part
-                    break
+            # Validasi khusus untuk jadwal 'tanggal'
+            if schedule_part == 'tanggal':
+                if '|' not in message_part:
+                    await update.message.reply_text(
+                        "❌ Format untuk jadwal `tanggal` salah!\n\n"
+                        "Gunakan format: `tanggal|pesan`\n"
+                        "Contoh: `15|Bayar tagihan listrik`\n\n"
+                        "Maka reminder akan dikirim setiap tanggal 15 setiap bulan.",
+                        parse_mode="Markdown"
+                    )
+                    return True
+                else:
+                    try:
+                        tgl_str = message_part.split('|')[0]
+                        tgl = int(tgl_str)
+                        if tgl < 1 or tgl > 31:
+                            raise ValueError
+                    except:
+                        await update.message.reply_text(
+                            "❌ Tanggal tidak valid! Gunakan angka 1-31.\n"
+                            "Contoh: `15|Bayar tagihan`",
+                            parse_mode="Markdown"
+                        )
+                        return True
             
-            context.user_data['waiting_new_reminder_data'] = False
-            context.user_data['edit_id'] = None
-            await update.message.reply_text(
-                f"✅ *Reminder ID {edit_id} berhasil diupdate!*",
-                parse_mode="Markdown",
-                reply_markup=REMINDER_KEYBOARD
-            )
+            edit_id = context.user_data['edit_id']
+            if edit_id is not None:
+                for r in custom_reminders:
+                    if r['id'] == edit_id:
+                        r['time'] = time_part
+                        r['schedule'] = schedule_part
+                        r['message'] = message_part
+                        break
+                context.user_data['waiting_new_reminder_data'] = False
+                context.user_data['edit_id'] = None
+                await update.message.reply_text(
+                    f"✅ *Reminder ID {edit_id} berhasil diupdate!*",
+                    parse_mode="Markdown",
+                    reply_markup=REMINDER_KEYBOARD
+                )
+            else:
+                custom_reminders.append({
+                    'id': len(custom_reminders) + 1,
+                    'time': time_part,
+                    'schedule': schedule_part,
+                    'message': message_part,
+                    'enabled': True
+                })
+                context.user_data['creating_reminder'] = False
+                await update.message.reply_text(
+                    f"✅ *Reminder berhasil dibuat!*\n\n"
+                    f"⏰ Waktu: {time_part} WIB\n"
+                    f"📅 Jadwal: {schedule_part}\n"
+                    f"📝 Pesan: {message_part}",
+                    parse_mode="Markdown",
+                    reply_markup=REMINDER_KEYBOARD
+                )
+            
         except Exception as e:
-            await update.message.reply_text(f"❌ Error: {e}", parse_mode="Markdown")
+            await update.message.reply_text(
+                f"❌ Error: {e}\n\n"
+                f"Gunakan format: `HH:MM_jadwal_pesan`\n"
+                f"Contoh: `15:30_setiaphari_Segera absen pulang`",
+                parse_mode="Markdown"
+            )
         return True
     return False
 
@@ -503,12 +588,20 @@ async def handle_reminder_menu(update: Update, context: CallbackContext):
         await update.message.reply_text(
             "📝 *Buat Reminder Baru*\n\n"
             "Format: `HH:MM_jadwal_pesan`\n\n"
-            "Contoh:\n"
+            "📌 *CONTOH PENGGUNAAN:*\n"
             "• `08:00_setiaphari_Selamat pagi!`\n"
             "• `14:30_senin_Rapat tim`\n"
-            "• `20:00_weekend_Istirahat`\n\n"
-            "Jadwal bisa: `setiaphari`, `weekday`, `weekend`, atau hari:\n"
-            "`senin`, `selasa`, `rabu`, `kamis`, `jumat`, `sabtu`, `minggu`\n\n"
+            "• `20:00_weekend_Istirahat`\n"
+            "• `09:00_2minggu_senin_Meeting 2 minggu sekali`\n"
+            "• `09:00_2minggu_jumat_Evaluasi 2 minggu sekali`\n"
+            "• `10:00_tanggal_15|Bayar tagihan listrik`\n\n"
+            "📋 *JADWAL YANG VALID:*\n"
+            "• `setiaphari` - Setiap hari\n"
+            "• `weekday` - Senin s/d Jumat\n"
+            "• `weekend` - Sabtu & Minggu\n"
+            "• `2minggu_senin` hingga `2minggu_minggu` - 2 minggu sekali di hari tertentu\n"
+            "• `tanggal` - Setiap tanggal tertentu (format: `tanggal|pesan`)\n"
+            "• `senin`, `selasa`, `rabu`, `kamis`, `jumat`, `sabtu`, `minggu`\n\n"
             "Kirim `❌ Batal` untuk membatalkan.",
             parse_mode="Markdown",
             reply_markup=CANCEL_KEYBOARD
@@ -553,8 +646,11 @@ async def handle_reminder_menu(update: Update, context: CallbackContext):
             if not (0 <= jam <= 23 and 0 <= menit <= 59):
                 raise ValueError("Waktu tidak valid")
             
-            valid_schedules = ['setiaphari', 'weekday', 'weekend', 
-                              'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu']
+            valid_schedules = ['setiaphari', 'weekday', 'weekend', 'tanggal',
+                               '2minggu_senin', '2minggu_selasa', '2minggu_rabu', 
+                               '2minggu_kamis', '2minggu_jumat', '2minggu_sabtu', '2minggu_minggu',
+                               'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu']
+            
             if schedule_part not in valid_schedules:
                 await update.message.reply_text(
                     f"❌ Jadwal '{schedule_part}' tidak valid!\n\n"
@@ -562,10 +658,35 @@ async def handle_reminder_menu(update: Update, context: CallbackContext):
                     f"• `setiaphari` - Setiap hari\n"
                     f"• `weekday` - Senin s/d Jumat\n"
                     f"• `weekend` - Sabtu & Minggu\n"
-                    f"• `senin`, `selasa`, `rabu`, `kamis`, `jumat`, `sabtu`, `minggu`",
+                    f"• `2minggu_senin` hingga `2minggu_minggu` - 2 minggu sekali di hari tertentu\n"
+                    f"• `tanggal` - Setiap tanggal tertentu\n"
+                    f"• `senin` hingga `minggu` - Setiap minggu di hari tertentu",
                     parse_mode="Markdown"
                 )
                 return True
+            
+            if schedule_part == 'tanggal':
+                if '|' not in message_part:
+                    await update.message.reply_text(
+                        "❌ Format untuk jadwal `tanggal` salah!\n\n"
+                        "Gunakan format: `tanggal|pesan`\n"
+                        "Contoh: `15|Bayar tagihan listrik`",
+                        parse_mode="Markdown"
+                    )
+                    return True
+                else:
+                    try:
+                        tgl_str = message_part.split('|')[0]
+                        tgl = int(tgl_str)
+                        if tgl < 1 or tgl > 31:
+                            raise ValueError
+                    except:
+                        await update.message.reply_text(
+                            "❌ Tanggal tidak valid! Gunakan angka 1-31.\n"
+                            "Contoh: `15|Bayar tagihan`",
+                            parse_mode="Markdown"
+                        )
+                        return True
             
             custom_reminders.append({
                 'id': len(custom_reminders) + 1,
@@ -602,7 +723,6 @@ async def scheduler_loop(application):
     """Loop penjadwalan hanya untuk reminder custom"""
     while True:
         try:
-            # Hanya reminder custom
             await send_reminder_custom(application)
             await asyncio.sleep(30)
         except Exception as e:
@@ -627,8 +747,10 @@ async def start(update: Update, context):
         "✅ *Ukuran A4 (150 DPI)* - Siap cetak!\n\n"
         "🔔 *Reminder Custom:*\n"
         "• Ketik /reminder untuk mengakses\n"
-        "• Buat reminder sesuai kebutuhan\n\n"
-        "🔐 *Akses Reminder:* `/reminder` (password: admin123)",
+        "• Buat reminder sesuai kebutuhan\n"
+        "• Jadwal 2 minggu sekali: `2minggu_senin`, `2minggu_jumat`, dll\n"
+        "• Jadwal tanggal: `tanggal` dengan format `tanggal|pesan`\n\n"
+        "🔐 *Akses Reminder:* `/reminder` (password: Reminder23)",
         parse_mode="Markdown",
         reply_markup=MAIN_KEYBOARD
     )
@@ -780,6 +902,15 @@ async def main():
     print(f"🔐 Reminder Custom: /reminder (password: {ADMIN_PASSWORD})")
     print(f"📐 Ukuran: A4 (150 DPI) - {IMG_W}x{IMG_H} px")
     print("=" * 50)
+    print("\n📋 JADWAL REMINDER YANG TERSEDIA:")
+    print("   • setiaphari      - Setiap hari")
+    print("   • weekday         - Senin s/d Jumat")
+    print("   • weekend         - Sabtu & Minggu")
+    print("   • senin/minggu    - Setiap minggu di hari tertentu")
+    print("   • 2minggu_senin   - 2 minggu sekali di hari Senin")
+    print("   • 2minggu_jumat   - 2 minggu sekali di hari Jumat")
+    print("   • tanggal         - Setiap tanggal tertentu (contoh: 15|pesan)")
+    print("=" * 50)
     
     application = Application.builder().token(TOKEN).build()
     
@@ -796,7 +927,8 @@ async def main():
     # Jalankan scheduler manual di background (hanya reminder custom)
     asyncio.create_task(scheduler_loop(application))
     
-    print("✅ Bot berjalan dengan reminder custom...")
+    print("\n✅ Bot berjalan dengan reminder custom...")
+    print("💡 Tips: Gunakan /reminder untuk mengakses menu reminder")
     
     await application.initialize()
     await application.start()
