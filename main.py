@@ -743,11 +743,7 @@ async def start(update: Update, context):
         "Contoh: `Indomie Goreng.3500`\n\n"
         "📄 *Mode NORMAL*\n"
         "Format: `nama.harga`\n"
-        "Contoh: `Beras Premium.75000`\n\n"
-        "✅ *Ukuran A4 (150 DPI)* - Siap cetak!\n\n"
-        "🔔 *Reminder Custom:*\n"
-        "• Ketik /reminder untuk mengakses\n"
-        "• Buat reminder sesuai kebutuhan\n",
+        "Contoh: `Beras Premium.75000`\n\n",
         parse_mode="Markdown",
         reply_markup=MAIN_KEYBOARD
     )
