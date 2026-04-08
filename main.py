@@ -3,16 +3,21 @@ import io
 import math
 import logging
 from datetime import datetime
+from io import BytesIO
 import pytz
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ForceReply
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 import asyncio
 import aiohttp
-from io import BytesIO
+import numpy as np
 
-# --- LOGGING ---
+# ======================================================
+# LOGGING
+# ======================================================
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
 # ======================================================
@@ -22,7 +27,7 @@ GROUP_CHAT_ID = -1002042735771
 MESSAGE_THREAD_ID = 7956
 
 # ======================================================
-# KONFIGURASI UKURAN DAN WARNA
+# KONFIGURASI UKURAN DAN WARNA UNTUK CETAK HARGA
 # ======================================================
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
@@ -52,7 +57,11 @@ GAP = 5
 TEMPLATE_SIZE = (720, 1018)
 PRODUCT_AREA = {"x": 38, "y": 148, "width": 644, "height": 700}
 PRICE_AREA = {"x": 38, "y": 848, "width": 644, "height": 139}
+SCALE = 2  # Render at 2x for sharp output on phones
 
+# ======================================================
+# KEYBOARD
+# ======================================================
 MAIN_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("/promo"), KeyboardButton("/normal")],
     [KeyboardButton("/paket"), KeyboardButton("/pop")]
@@ -73,7 +82,7 @@ REMINDER_KEYBOARD = ReplyKeyboardMarkup([
 CANCEL_KEYBOARD = ReplyKeyboardMarkup([["❌ Batal"]], resize_keyboard=True, one_time_keyboard=False)
 
 # ======================================================
-# FUNGSI UTILITY
+# FUNGSI UTILITY UNTUK CETAK HARGA
 # ======================================================
 def get_font(size, bold=True):
     font_files = [
@@ -127,139 +136,7 @@ def get_current_date_wib():
     return f"{now.day} {bulan_indonesia[now.month]} {now.year}"
 
 # ======================================================
-# FUNGSI POP IMAGE (DARI bot.ts)
-# ======================================================
-async def download_product_image(plu: str) -> BytesIO:
-    """Download product image from Indomaret CDN"""
-    url = f"https://cdn-klik.klikindomaret.com/klik-catalog/product/{plu}_meta.jpg"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            if response.status != 200:
-                raise Exception(f"Gagal download gambar (status {response.status})")
-            return BytesIO(await response.read())
-
-def remove_background_simple(image: Image.Image) -> Image.Image:
-    """Simple background removal - membuat background transparan"""
-    # Convert to RGBA if not already
-    if image.mode != 'RGBA':
-        image = image.convert('RGBA')
-    
-    data = image.getdata()
-    new_data = []
-    
-    for item in data:
-        # Jika warna mendekati putih (threshold 235)
-        if item[0] >= 235 and item[1] >= 235 and item[2] >= 235:
-            new_data.append((255, 255, 255, 0))  # Transparan
-        else:
-            new_data.append(item)
-    
-    image.putdata(new_data)
-    return image
-
-def create_price_image(price: str, width: int, height: int) -> Image.Image:
-    """Membuat gambar teks harga"""
-    img = Image.new('RGBA', (width, height), (255, 255, 255, 0))
-    draw = ImageDraw.Draw(img)
-    
-    # Hitung ukuran font
-    base_size = 160
-    if len(price) > 8:
-        size = max(90, base_size - (len(price) - 8) * 10)
-    else:
-        size = base_size
-    
-    try:
-        font = ImageFont.truetype("Arial Black.ttf", size)
-    except:
-        font = get_font(size, bold=True)
-    
-    # Dapatkan bounding box untuk centering
-    bbox = draw.textbbox((0, 0), price, font=font)
-    text_width = bbox[2] - bbox[0]
-    text_height = bbox[3] - bbox[1]
-    
-    x = (width - text_width) // 2
-    y = (height - text_height) // 2
-    
-    draw.text((x, y), price, fill=(17, 17, 17), font=font)
-    return img
-
-async def generate_pop_image(plu: str, price: str) -> BytesIO:
-    """Generate promotional image like the TypeScript bot"""
-    try:
-        # Download template (perlu disimpan dulu)
-        template_path = "template.jpg"
-        
-        # Cek apakah template ada, jika tidak buat template dasar
-        if not os.path.exists(template_path):
-            # Buat template dasar jika belum ada
-            template = Image.new('RGB', TEMPLATE_SIZE, color=(255, 255, 255))
-            draw = ImageDraw.Draw(template)
-            
-            # Gambar border
-            draw.rectangle([0, 0, TEMPLATE_SIZE[0]-1, TEMPLATE_SIZE[1]-1], outline=(200, 200, 200), width=2)
-            
-            # Area produk (border putus-putus)
-            p = PRODUCT_AREA
-            draw.rectangle([p["x"], p["y"], p["x"]+p["width"], p["y"]+p["height"]], 
-                          outline=(200, 200, 200), width=1)
-            
-            # Area harga
-            pr = PRICE_AREA
-            draw.rectangle([pr["x"], pr["y"], pr["x"]+pr["width"], pr["y"]+pr["height"]], 
-                          outline=(200, 200, 200), width=1)
-            
-            template.save(template_path, "JPEG", quality=95)
-        
-        # Load template
-        template = Image.open(template_path)
-        template = template.resize((TEMPLATE_SIZE[0], TEMPLATE_SIZE[1]), Image.Resampling.LANCZOS)
-        
-        # Download product image
-        product_img_data = await download_product_image(plu)
-        product_img = Image.open(product_img_data)
-        
-        # Remove background
-        product_img = remove_background_simple(product_img)
-        
-        # Resize product image to fit area (85% of area)
-        p = PRODUCT_AREA
-        target_width = int(p["width"] * 0.85)
-        target_height = int(p["height"] * 0.85)
-        
-        # Maintain aspect ratio
-        product_img.thumbnail((target_width, target_height), Image.Resampling.LANCZOS)
-        
-        # Center position
-        paste_x = p["x"] + (p["width"] - product_img.width) // 2
-        paste_y = p["y"] + (p["height"] - product_img.height) // 2
-        
-        # Composite product onto template
-        template = template.convert('RGBA')
-        template.paste(product_img, (paste_x, paste_y), product_img)
-        
-        # Add price
-        pr = PRICE_AREA
-        price_img = create_price_image(price, pr["width"], pr["height"])
-        template.paste(price_img, (pr["x"], pr["y"]), price_img)
-        
-        # Convert back to RGB
-        final = template.convert('RGB')
-        
-        # Save to buffer
-        output = BytesIO()
-        final.save(output, format='JPEG', quality=100, optimize=True)
-        output.seek(0)
-        
-        return output
-        
-    except Exception as e:
-        logging.error(f"Error generating POP image: {e}")
-        raise
-
-# ======================================================
-# FUNGSI GAMBAR KARTU
+# FUNGSI GAMBAR KARTU UNTUK CETAK HARGA
 # ======================================================
 def draw_paket(draw, x, y, harga_normal, harga_spesial):
     draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=BLUE_BG, outline=BLACK, width=1)
@@ -358,6 +235,179 @@ def parse_pop_input(line):
     return {'plu': plu, 'harga': harga}
 
 # ======================================================
+# FUNGSI POP IMAGE (DARI bot.ts YANG DIPERBAIKI)
+# ======================================================
+async def download_product_image(plu: str) -> BytesIO:
+    """Download product image from Indomaret CDN"""
+    url = f"https://cdn-klik.klikindomaret.com/klik-catalog/product/{plu}_meta.jpg"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status != 200:
+                raise Exception(f"Gagal download gambar (status {response.status})")
+            return BytesIO(await response.read())
+
+def flood_fill_remove_background(image: Image.Image) -> Image.Image:
+    """
+    BFS flood-fill removal like TypeScript version.
+    Removes connected near-white background from edges while preserving white areas inside product.
+    """
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+    
+    img_array = np.array(image)
+    h, w = img_array.shape[:2]
+    
+    visited = np.zeros((h, w), dtype=np.uint8)
+    queue = []
+    
+    def is_near_white(r, g, b):
+        return r >= 235 and g >= 235 and b >= 235
+    
+    # Add edge pixels
+    for x in range(w):
+        r, g, b, a = img_array[0, x]
+        if is_near_white(r, g, b) and not visited[0, x]:
+            visited[0, x] = 1
+            queue.append((x, 0))
+    
+    for x in range(w):
+        r, g, b, a = img_array[h-1, x]
+        if is_near_white(r, g, b) and not visited[h-1, x]:
+            visited[h-1, x] = 1
+            queue.append((x, h-1))
+    
+    for y in range(h):
+        r, g, b, a = img_array[y, 0]
+        if is_near_white(r, g, b) and not visited[y, 0]:
+            visited[y, 0] = 1
+            queue.append((0, y))
+    
+    for y in range(h):
+        r, g, b, a = img_array[y, w-1]
+        if is_near_white(r, g, b) and not visited[y, w-1]:
+            visited[y, w-1] = 1
+            queue.append((w-1, y))
+    
+    # BFS flood fill
+    idx = 0
+    while idx < len(queue):
+        x, y = queue[idx]
+        idx += 1
+        
+        img_array[y, x, 3] = 0
+        
+        for nx, ny in [(x+1, y), (x-1, y), (x, y+1), (x, y-1)]:
+            if 0 <= nx < w and 0 <= ny < h and not visited[ny, nx]:
+                r, g, b, a = img_array[ny, nx]
+                if is_near_white(r, g, b):
+                    visited[ny, nx] = 1
+                    queue.append((nx, ny))
+    
+    return Image.fromarray(img_array, 'RGBA')
+
+def create_price_image(price: str, width: int, height: int) -> Image.Image:
+    """Membuat gambar teks harga dengan posisi presisi seperti TypeScript"""
+    img = Image.new('RGBA', (width, height), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(img)
+    
+    base_size = 160
+    if len(price) > 8:
+        size = max(90, base_size - (len(price) - 8) * 10)
+    else:
+        size = base_size
+    
+    try:
+        font = ImageFont.truetype("Arial Black.ttf", size)
+    except:
+        try:
+            font = ImageFont.truetype("Arial.ttf", size)
+        except:
+            font = get_font(size, bold=True)
+    
+    bbox = draw.textbbox((0, 0), price, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    
+    x = (width - text_width) // 2
+    y = (height - text_height) // 2
+    
+    draw.text((x, y), price, fill=(17, 17, 17), font=font)
+    
+    return img
+
+async def generate_pop_image(plu: str, price: str) -> BytesIO:
+    """Generate promotional image like the TypeScript bot with exact positioning"""
+    scaled_w = TEMPLATE_SIZE[0] * SCALE
+    scaled_h = TEMPLATE_SIZE[1] * SCALE
+    scaled_product = {k: v * SCALE for k, v in PRODUCT_AREA.items()}
+    scaled_price = {k: v * SCALE for k, v in PRICE_AREA.items()}
+    
+    try:
+        template_path = "template.jpg"
+        
+        if not os.path.exists(template_path):
+            template = Image.new('RGB', TEMPLATE_SIZE, color=(255, 255, 255))
+            draw = ImageDraw.Draw(template)
+            draw.rectangle([0, 0, TEMPLATE_SIZE[0]-1, TEMPLATE_SIZE[1]-1], outline=(200, 200, 200), width=2)
+            draw.rectangle([PRODUCT_AREA["x"], PRODUCT_AREA["y"], 
+                          PRODUCT_AREA["x"]+PRODUCT_AREA["width"], 
+                          PRODUCT_AREA["y"]+PRODUCT_AREA["height"]], 
+                         outline=(200, 200, 200), width=1)
+            draw.rectangle([PRICE_AREA["x"], PRICE_AREA["y"], 
+                          PRICE_AREA["x"]+PRICE_AREA["width"], 
+                          PRICE_AREA["y"]+PRICE_AREA["height"]], 
+                         outline=(200, 200, 200), width=1)
+            template.save(template_path, "JPEG", quality=95)
+            logger.info("Template default telah dibuat")
+        
+        template = Image.open(template_path)
+        template = template.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
+        template = template.convert('RGBA')
+        
+        product_img_data = await download_product_image(plu)
+        product_img = Image.open(product_img_data)
+        
+        product_img = flood_fill_remove_background(product_img)
+        
+        target_width = int(scaled_product["width"] * 0.85)
+        target_height = int(scaled_product["height"] * 0.85)
+        
+        original_w, original_h = product_img.size
+        ratio = min(target_width / original_w, target_height / original_h)
+        new_w = max(int(original_w * ratio), 100)
+        new_h = max(int(original_h * ratio), 100)
+        
+        product_img = product_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        
+        paste_x = scaled_product["x"] + (scaled_product["width"] - new_w) // 2
+        paste_y = scaled_product["y"] + (scaled_product["height"] - new_h) // 2
+        
+        template.paste(product_img, (paste_x, paste_y), product_img)
+        
+        price_img = create_price_image(price, scaled_price["width"], scaled_price["height"])
+        template.paste(price_img, (scaled_price["x"], scaled_price["y"]), price_img)
+        
+        template_rgb = template.convert('RGB')
+        
+        enhancer = ImageEnhance.Color(template_rgb)
+        template_rgb = enhancer.enhance(1.2)
+        
+        enhancer = ImageEnhance.Brightness(template_rgb)
+        template_rgb = enhancer.enhance(1.03)
+        
+        template_rgb = template_rgb.filter(ImageFilter.UnsharpMask(radius=0.6, percent=100, threshold=0))
+        
+        output = BytesIO()
+        template_rgb.save(output, format='JPEG', quality=100, optimize=True)
+        output.seek(0)
+        
+        return output
+        
+    except Exception as e:
+        logger.error(f"Error generating POP image: {e}")
+        raise
+
+# ======================================================
 # REMINDER CUSTOM FUNCTIONS
 # ======================================================
 async def send_reminder_custom(context: CallbackContext):
@@ -378,14 +428,12 @@ async def send_reminder_custom(context: CallbackContext):
             if reminder.get('enabled', True):
                 waktu_ok = False
                 
-                # Jadwal 2 MINGGU SEKALI (untuk berbagai hari)
                 if reminder['schedule'].startswith('2minggu_'):
                     hari_target = reminder['schedule'].replace('2minggu_', '')
                     epoch_days = now.toordinal()
                     if (epoch_days // 14) % 2 == 0 and hari_ini == hari_target:
                         waktu_ok = True
                 
-                # Jadwal SETIAP TANGGAL
                 elif reminder['schedule'] == 'tanggal':
                     try:
                         if '|' in reminder['message']:
@@ -397,19 +445,15 @@ async def send_reminder_custom(context: CallbackContext):
                     except:
                         pass
                 
-                # Jadwal SETIAP HARI
                 elif reminder['schedule'] == 'setiaphari':
                     waktu_ok = True
                 
-                # Jadwal WEEKDAY (Senin-Jumat)
                 elif reminder['schedule'] == 'weekday':
                     waktu_ok = hari_ini not in ['sabtu', 'minggu']
                 
-                # Jadwal WEEKEND
                 elif reminder['schedule'] == 'weekend':
                     waktu_ok = hari_ini in ['sabtu', 'minggu']
                 
-                # Jadwal HARI TERTENTU
                 else:
                     waktu_ok = reminder['schedule'] == hari_ini
                 
@@ -422,10 +466,10 @@ async def send_reminder_custom(context: CallbackContext):
                             text=f"⏰ *REMINDER*\n\n{reminder['message']}",
                             parse_mode="Markdown"
                         )
-                        logging.info(f"✅ Reminder custom terkirim: {reminder['message'][:50]}")
+                        logger.info(f"✅ Reminder custom terkirim: {reminder['message'][:50]}")
                         await asyncio.sleep(60)
     except Exception as e:
-        logging.error(f"❌ Gagal kirim reminder custom: {e}")
+        logger.error(f"❌ Gagal kirim reminder custom: {e}")
 
 async def check_password(update: Update, context: CallbackContext):
     if context.user_data.get('awaiting_password'):
@@ -589,14 +633,12 @@ async def process_new_reminder_data(update: Update, context: CallbackContext):
                 )
                 return True
             
-            # Validasi khusus untuk jadwal 'tanggal'
             if schedule_part == 'tanggal':
                 if '|' not in message_part:
                     await update.message.reply_text(
                         "❌ Format untuk jadwal `tanggal` salah!\n\n"
                         "Gunakan format: `tanggal|pesan`\n"
-                        "Contoh: `15|Bayar tagihan listrik`\n\n"
-                        "Maka reminder akan dikirim setiap tanggal 15 setiap bulan.",
+                        "Contoh: `15|Bayar tagihan listrik`",
                         parse_mode="Markdown"
                     )
                     return True
@@ -878,7 +920,7 @@ async def scheduler_loop(application):
             await send_reminder_custom(application)
             await asyncio.sleep(30)
         except Exception as e:
-            logging.error(f"Error di scheduler: {e}")
+            logger.error(f"Error di scheduler: {e}")
             await asyncio.sleep(60)
 
 # ======================================================
@@ -950,7 +992,7 @@ async def handle_message(update: Update, context: CallbackContext):
         if await process_toggle_reminder(update, context):
             return
     
-    # Handle mode cetak harga
+    # Handle mode
     mode = context.user_data.get('mode')
     if not mode:
         await update.message.reply_text("❌ Pilih mode dulu: /paket, /promo, /normal, atau /pop")
@@ -1072,15 +1114,15 @@ async def main():
         print("❌ ERROR: TELEGRAM_TOKEN tidak ditemukan!")
         return
     
-    print("=" * 50)
+    print("=" * 60)
     print("🤖 BOT CETAK HARGA + POP MAKER + REMINDER CUSTOM")
-    print("=" * 50)
+    print("=" * 60)
     print(f"📱 Group ID: {GROUP_CHAT_ID}")
     print(f"📌 Subtopik MENU ID: {MESSAGE_THREAD_ID}")
     print(f"🔐 Reminder Custom: /reminder (password: {ADMIN_PASSWORD})")
     print(f"📐 Ukuran A4: {IMG_W}x{IMG_H} px (150 DPI)")
-    print(f"🖼️ POP Template: {TEMPLATE_SIZE[0]}x{TEMPLATE_SIZE[1]} px")
-    print("=" * 50)
+    print(f"🖼️ POP Template: {TEMPLATE_SIZE[0]}x{TEMPLATE_SIZE[1]} px (Scale: {SCALE}x)")
+    print("=" * 60)
     print("\n📋 JADWAL REMINDER YANG TERSEDIA:")
     print("   • setiaphari      - Setiap hari")
     print("   • weekday         - Senin s/d Jumat")
@@ -1088,11 +1130,11 @@ async def main():
     print("   • senin/minggu    - Setiap minggu di hari tertentu")
     print("   • 2minggu_senin   - 2 minggu sekali di hari Senin")
     print("   • 2minggu_jumat   - 2 minggu sekali di hari Jumat")
-    print("   • tanggal         - Setiap tanggal tertentu (contoh: 15|pesan)")
+    print("   • tanggal         - Setiap tanggal tertentu")
     print("\n📋 FORMAT POP MAKER:")
     print("   • /pop lalu kirim: PLU.Harga")
     print("   • Contoh: 10008989.15000")
-    print("=" * 50)
+    print("=" * 60)
     
     application = Application.builder().token(TOKEN).build()
     
@@ -1113,6 +1155,7 @@ async def main():
     print("\n✅ Bot berjalan dengan POP Maker & reminder custom...")
     print("💡 Tips: Gunakan /reminder untuk mengakses menu reminder")
     print("💡 Tips: Gunakan /pop untuk membuat gambar POP dari PLU")
+    print("\n⏳ Menunggu pesan...")
     
     await application.initialize()
     await application.start()
