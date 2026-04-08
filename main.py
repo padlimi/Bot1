@@ -72,26 +72,48 @@ PRICE_AREA = {"x": 38, "y": 848, "width": 644, "height": 139}
 SCALE = 2
 
 # ======================================================
-# KEYBOARD
+# KEYBOARD - PERSISTENT (tidak akan hilang)
 # ======================================================
-MAIN_KEYBOARD = ReplyKeyboardMarkup([
-    [KeyboardButton("/promo"), KeyboardButton("/normal")],
-    [KeyboardButton("/paket"), KeyboardButton("/pop")]
-], resize_keyboard=True, one_time_keyboard=False)
+# Gunakan ReplyKeyboardMarkup dengan parameter one_time_keyboard=False
+# dan resize_keyboard=True agar tombol selalu muncul
+MAIN_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        ["/promo", "/normal"],
+        ["/paket", "/pop"]
+    ],
+    resize_keyboard=True,      # Menyesuaikan ukuran tombol
+    one_time_keyboard=False,   # TOMOL TIDAK AKAN HILANG setelah ditekan
+    persistent=True            # Menyimpan keyboard antar sesi (Telegram API 7.7+)
+)
 
-# ======================================================
-# SISTEM REMINDER CUSTOM
-# ======================================================
-custom_reminders = []
-ADMIN_PASSWORD = "Reminder23"
+REMINDER_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        ["📋 Lihat Reminder", "➕ Buat Reminder Baru"],
+        ["✏️ Edit Reminder", "❌ Hapus Reminder"],
+        ["🔘 Aktif/Nonaktifkan", "🔙 Kembali"]
+    ],
+    resize_keyboard=True,
+    one_time_keyboard=False,
+    persistent=True
+)
 
-REMINDER_KEYBOARD = ReplyKeyboardMarkup([
-    ["📋 Lihat Reminder", "➕ Buat Reminder Baru"],
-    ["✏️ Edit Reminder", "❌ Hapus Reminder"],
-    ["🔘 Aktif/Nonaktifkan", "🔙 Kembali"]
-], resize_keyboard=True, one_time_keyboard=False)
+CANCEL_KEYBOARD = ReplyKeyboardMarkup(
+    [["❌ Batal"]],
+    resize_keyboard=True,
+    one_time_keyboard=False
+)
 
-CANCEL_KEYBOARD = ReplyKeyboardMarkup([["❌ Batal"]], resize_keyboard=True, one_time_keyboard=False)
+# Keyboard untuk setelah selesai proses
+RESULT_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        ["/promo", "/normal"],
+        ["/paket", "/pop"],
+        ["/reminder", "/help"]
+    ],
+    resize_keyboard=True,
+    one_time_keyboard=False,
+    persistent=True
+)
 
 # ======================================================
 # FUNGSI UTILITY UNTUK CETAK HARGA
@@ -557,6 +579,11 @@ async def check_password(update: Update, context: CallbackContext):
         else:
             await update.message.reply_text("❌ *Password salah!* Akses ditolak.", parse_mode="Markdown")
             context.user_data['awaiting_password'] = False
+            # Kembalikan keyboard utama
+            await update.message.reply_text(
+                "Kembali ke menu utama.",
+                reply_markup=MAIN_KEYBOARD
+            )
         return True
     return False
 
@@ -1017,6 +1044,22 @@ async def start(update: Update, context):
         "🔐 *Reminder:* /reminder\n\n"
         "Pilih mode dari tombol di bawah!",
         parse_mode="Markdown",
+        reply_markup=MAIN_KEYBOARD  # Keyboard akan muncul dan tidak hilang
+    )
+
+async def help_command(update: Update, context):
+    await update.message.reply_text(
+        "📖 *Panduan Penggunaan Bot*\n\n"
+        "1️⃣ *Pilih Mode*: Tekan tombol /promo, /normal, /paket, atau /pop\n\n"
+        "2️⃣ *Kirim Data* sesuai format:\n"
+        "• PROMO: `Nama Produk.Harga`\n"
+        "• NORMAL: `Nama Produk.Harga`\n"
+        "• PAKET: `harga_normal.harga_promo.qty`\n"
+        "• POP: `8digitPLU.Harga`\n\n"
+        "3️⃣ *Tunggu proses* hingga gambar jadi\n\n"
+        "4️⃣ *Reminder*: Gunakan /reminder (password: Reminder23)\n\n"
+        "📌 Tombol command akan selalu tersedia di bawah!",
+        parse_mode="Markdown",
         reply_markup=MAIN_KEYBOARD
     )
 
@@ -1032,8 +1075,26 @@ async def set_mode(update: Update, context):
     mode = update.message.text.replace('/', '')
     context.user_data['mode'] = mode
     await update.message.reply_text(
-        f"✅ Mode {mode.upper()} aktif - Kirim data sekarang:",
+        f"✅ Mode {mode.upper()} aktif - Kirim data sekarang:\n\n"
+        f"Kirim sesuai format, bisa beberapa baris sekaligus.\n"
+        f"Ketik /cancel jika ingin membatalkan.",
         reply_markup=ForceReply()
+    )
+
+async def cancel(update: Update, context):
+    context.user_data['mode'] = None
+    context.user_data['awaiting_password'] = False
+    context.user_data['reminder_mode'] = False
+    context.user_data['creating_reminder'] = False
+    context.user_data['editing_reminder'] = False
+    context.user_data['deleting_reminder'] = False
+    context.user_data['toggling_reminder'] = False
+    context.user_data['waiting_new_reminder_data'] = False
+    
+    await update.message.reply_text(
+        "❌ *Dibatalkan*\n\nKembali ke menu utama.",
+        parse_mode="Markdown",
+        reply_markup=MAIN_KEYBOARD
     )
 
 async def handle_message(update: Update, context: CallbackContext):
@@ -1067,10 +1128,21 @@ async def handle_message(update: Update, context: CallbackContext):
     # Handle mode
     mode = context.user_data.get('mode')
     if not mode:
-        await update.message.reply_text("❌ Pilih mode dulu: /paket, /promo, /normal, atau /pop")
+        # Jika tidak dalam mode apapun, beri tahu user
+        await update.message.reply_text(
+            "❌ Belum ada mode yang dipilih.\n\n"
+            "Silakan pilih mode terlebih dahulu dengan menekan tombol di bawah:",
+            reply_markup=MAIN_KEYBOARD
+        )
         return
     
     text = update.message.text.strip()
+    
+    # Cek cancel
+    if text.lower() == "/cancel":
+        await cancel(update, context)
+        return
+    
     lines = text.split('\n')
     
     # Special handling for POP mode
@@ -1097,6 +1169,11 @@ async def handle_message(update: Update, context: CallbackContext):
                 await update.message.reply_text(f"❌ Gagal membuat POP: {str(e)}")
         
         context.user_data['mode'] = None
+        # Kembalikan keyboard utama setelah selesai
+        await update.message.reply_text(
+            "✅ Selesai! Pilih mode lain jika ingin melanjutkan:",
+            reply_markup=MAIN_KEYBOARD
+        )
         return
     
     # Handle other modes (paket, promo, normal)
@@ -1173,10 +1250,14 @@ async def handle_message(update: Update, context: CallbackContext):
         bio.seek(0)
         
         caption = f"📸 Halaman {img_idx + 1}/{num_images} (A4 150 DPI - siap cetak)"
-        await update.message.reply_photo(photo=bio, caption=caption, reply_markup=MAIN_KEYBOARD)
+        await update.message.reply_photo(photo=bio, caption=caption)
     
     context.user_data['mode'] = None
-    await update.message.reply_text("✅ Selesai! Gambar sudah siap cetak di kertas A4.")
+    # Kembalikan keyboard utama setelah selesai
+    await update.message.reply_text(
+        "✅ Selesai! Pilih mode lain jika ingin melanjutkan:",
+        reply_markup=MAIN_KEYBOARD
+    )
 
 # ======================================================
 # MAIN FUNCTION
@@ -1212,11 +1293,13 @@ async def main():
     
     # Handler untuk command
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("reminder", reminder_command))
     application.add_handler(CommandHandler("promo", set_mode))
     application.add_handler(CommandHandler("normal", set_mode))
     application.add_handler(CommandHandler("paket", set_mode))
     application.add_handler(CommandHandler("pop", set_mode))
+    application.add_handler(CommandHandler("cancel", cancel))
     
     # Handler untuk pesan biasa
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -1227,6 +1310,7 @@ async def main():
     print("\n✅ Bot berjalan dengan POP Maker & reminder custom...")
     print("💡 Tips: Gunakan /reminder untuk mengakses menu reminder")
     print("💡 Tips: Gunakan /pop untuk membuat gambar POP dari PLU")
+    print("💡 Tips: Tombol command akan SELALU muncul di bawah!")
     print("\n⏳ Menunggu pesan...")
     
     await application.initialize()
