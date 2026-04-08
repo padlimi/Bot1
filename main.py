@@ -8,6 +8,8 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ForceReply
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from PIL import Image, ImageDraw, ImageFont
 import asyncio
+import aiohttp
+from io import BytesIO
 
 # --- LOGGING ---
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -44,9 +46,16 @@ START_X = MARGIN
 START_Y = MARGIN
 GAP = 5
 
+# ======================================================
+# KONFIGURASI POP IMAGE
+# ======================================================
+TEMPLATE_SIZE = (720, 1018)
+PRODUCT_AREA = {"x": 38, "y": 148, "width": 644, "height": 700}
+PRICE_AREA = {"x": 38, "y": 848, "width": 644, "height": 139}
+
 MAIN_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("/promo"), KeyboardButton("/normal")],
-    [KeyboardButton("/paket")]
+    [KeyboardButton("/paket"), KeyboardButton("/pop")]
 ], resize_keyboard=True, one_time_keyboard=False)
 
 # ======================================================
@@ -116,6 +125,138 @@ def get_current_date_wib():
         9: 'September', 10: 'Oktober', 11: 'November', 12: 'Desember'
     }
     return f"{now.day} {bulan_indonesia[now.month]} {now.year}"
+
+# ======================================================
+# FUNGSI POP IMAGE (DARI bot.ts)
+# ======================================================
+async def download_product_image(plu: str) -> BytesIO:
+    """Download product image from Indomaret CDN"""
+    url = f"https://cdn-klik.klikindomaret.com/klik-catalog/product/{plu}_meta.jpg"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status != 200:
+                raise Exception(f"Gagal download gambar (status {response.status})")
+            return BytesIO(await response.read())
+
+def remove_background_simple(image: Image.Image) -> Image.Image:
+    """Simple background removal - membuat background transparan"""
+    # Convert to RGBA if not already
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+    
+    data = image.getdata()
+    new_data = []
+    
+    for item in data:
+        # Jika warna mendekati putih (threshold 235)
+        if item[0] >= 235 and item[1] >= 235 and item[2] >= 235:
+            new_data.append((255, 255, 255, 0))  # Transparan
+        else:
+            new_data.append(item)
+    
+    image.putdata(new_data)
+    return image
+
+def create_price_image(price: str, width: int, height: int) -> Image.Image:
+    """Membuat gambar teks harga"""
+    img = Image.new('RGBA', (width, height), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(img)
+    
+    # Hitung ukuran font
+    base_size = 160
+    if len(price) > 8:
+        size = max(90, base_size - (len(price) - 8) * 10)
+    else:
+        size = base_size
+    
+    try:
+        font = ImageFont.truetype("Arial Black.ttf", size)
+    except:
+        font = get_font(size, bold=True)
+    
+    # Dapatkan bounding box untuk centering
+    bbox = draw.textbbox((0, 0), price, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    
+    x = (width - text_width) // 2
+    y = (height - text_height) // 2
+    
+    draw.text((x, y), price, fill=(17, 17, 17), font=font)
+    return img
+
+async def generate_pop_image(plu: str, price: str) -> BytesIO:
+    """Generate promotional image like the TypeScript bot"""
+    try:
+        # Download template (perlu disimpan dulu)
+        template_path = "template.jpg"
+        
+        # Cek apakah template ada, jika tidak buat template dasar
+        if not os.path.exists(template_path):
+            # Buat template dasar jika belum ada
+            template = Image.new('RGB', TEMPLATE_SIZE, color=(255, 255, 255))
+            draw = ImageDraw.Draw(template)
+            
+            # Gambar border
+            draw.rectangle([0, 0, TEMPLATE_SIZE[0]-1, TEMPLATE_SIZE[1]-1], outline=(200, 200, 200), width=2)
+            
+            # Area produk (border putus-putus)
+            p = PRODUCT_AREA
+            draw.rectangle([p["x"], p["y"], p["x"]+p["width"], p["y"]+p["height"]], 
+                          outline=(200, 200, 200), width=1)
+            
+            # Area harga
+            pr = PRICE_AREA
+            draw.rectangle([pr["x"], pr["y"], pr["x"]+pr["width"], pr["y"]+pr["height"]], 
+                          outline=(200, 200, 200), width=1)
+            
+            template.save(template_path, "JPEG", quality=95)
+        
+        # Load template
+        template = Image.open(template_path)
+        template = template.resize((TEMPLATE_SIZE[0], TEMPLATE_SIZE[1]), Image.Resampling.LANCZOS)
+        
+        # Download product image
+        product_img_data = await download_product_image(plu)
+        product_img = Image.open(product_img_data)
+        
+        # Remove background
+        product_img = remove_background_simple(product_img)
+        
+        # Resize product image to fit area (85% of area)
+        p = PRODUCT_AREA
+        target_width = int(p["width"] * 0.85)
+        target_height = int(p["height"] * 0.85)
+        
+        # Maintain aspect ratio
+        product_img.thumbnail((target_width, target_height), Image.Resampling.LANCZOS)
+        
+        # Center position
+        paste_x = p["x"] + (p["width"] - product_img.width) // 2
+        paste_y = p["y"] + (p["height"] - product_img.height) // 2
+        
+        # Composite product onto template
+        template = template.convert('RGBA')
+        template.paste(product_img, (paste_x, paste_y), product_img)
+        
+        # Add price
+        pr = PRICE_AREA
+        price_img = create_price_image(price, pr["width"], pr["height"])
+        template.paste(price_img, (pr["x"], pr["y"]), price_img)
+        
+        # Convert back to RGB
+        final = template.convert('RGB')
+        
+        # Save to buffer
+        output = BytesIO()
+        final.save(output, format='JPEG', quality=100, optimize=True)
+        output.seek(0)
+        
+        return output
+        
+    except Exception as e:
+        logging.error(f"Error generating POP image: {e}")
+        raise
 
 # ======================================================
 # FUNGSI GAMBAR KARTU
@@ -205,8 +346,19 @@ def parse_input_paket(line):
     qty = int(parts[2]) if len(parts) >= 3 and parts[2].strip().isdigit() else 1
     return {'harga_normal': harga_awal, 'harga_spesial': harga_promo, 'qty': min(qty, 100)}
 
+def parse_pop_input(line):
+    """Parse input untuk POP: PLU.Harga"""
+    parts = line.strip().split('.')
+    if len(parts) < 2:
+        return None
+    plu = parts[0].strip()
+    harga = '.'.join(parts[1:]).strip()
+    if len(plu) != 8 or not plu.isdigit():
+        return None
+    return {'plu': plu, 'harga': harga}
+
 # ======================================================
-# REMINDER CUSTOM FUNCTIONS (UPDATED)
+# REMINDER CUSTOM FUNCTIONS
 # ======================================================
 async def send_reminder_custom(context: CallbackContext):
     """Mengirim reminder custom yang sudah dijadwalkan"""
@@ -717,7 +869,7 @@ async def handle_reminder_menu(update: Update, context: CallbackContext):
     return False
 
 # ======================================================
-# SCHEDULER MANUAL (HANYA REMINDER CUSTOM)
+# SCHEDULER MANUAL
 # ======================================================
 async def scheduler_loop(application):
     """Loop penjadwalan hanya untuk reminder custom"""
@@ -734,7 +886,7 @@ async def scheduler_loop(application):
 # ======================================================
 async def start(update: Update, context):
     await update.message.reply_text(
-        "🎨 *Bot Cetak Harga Mewah - Format A4*\n\n"
+        "🎨 *Bot Cetak Harga Mewah + POP Maker*\n\n"
         "📦 *Mode PAKET* (2 harga)\n"
         "Format: `harga_normal.harga_promo.qty`\n"
         "Contoh: `600000.70000.3`\n\n"
@@ -743,7 +895,13 @@ async def start(update: Update, context):
         "Contoh: `Indomie Goreng.3500`\n\n"
         "📄 *Mode NORMAL*\n"
         "Format: `nama.harga`\n"
-        "Contoh: `Beras Premium.75000`\n\n",
+        "Contoh: `Beras Premium.75000`\n\n"
+        "🖼️ *Mode POP* (Point of Purchase)\n"
+        "Format: `PLU.Harga`\n"
+        "Contoh: `10008989.15000`\n"
+        "Catatan: PLU harus 8 digit angka\n\n"
+        "🔐 *Reminder:* /reminder\n\n"
+        "Pilih mode dari tombol di bawah!",
         parse_mode="Markdown",
         reply_markup=MAIN_KEYBOARD
     )
@@ -795,12 +953,39 @@ async def handle_message(update: Update, context: CallbackContext):
     # Handle mode cetak harga
     mode = context.user_data.get('mode')
     if not mode:
-        await update.message.reply_text("❌ Pilih mode dulu: /paket, /promo, atau /normal")
+        await update.message.reply_text("❌ Pilih mode dulu: /paket, /promo, /normal, atau /pop")
         return
     
     text = update.message.text.strip()
     lines = text.split('\n')
     
+    # Special handling for POP mode
+    if mode == 'pop':
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            pop_data = parse_pop_input(line)
+            if not pop_data:
+                await update.message.reply_text(f"❌ Format salah untuk POP!\nGunakan: `PLU.Harga`\nContoh: `10008989.15000`\n\nPLU harus 8 digit angka", parse_mode="Markdown")
+                continue
+            
+            try:
+                await update.message.reply_text(f"🖼️ Membuat POP untuk PLU {pop_data['plu']}...")
+                img_buffer = await generate_pop_image(pop_data['plu'], pop_data['harga'])
+                await update.message.reply_photo(
+                    photo=img_buffer, 
+                    caption=f"🖼️ *POP*\nPLU: {pop_data['plu']}\nHarga: {pop_data['harga']}",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                await update.message.reply_text(f"❌ Gagal membuat POP: {str(e)}")
+        
+        context.user_data['mode'] = None
+        return
+    
+    # Handle other modes (paket, promo, normal)
     all_items = []
     errors = []
     
@@ -888,12 +1073,13 @@ async def main():
         return
     
     print("=" * 50)
-    print("🤖 BOT CETAK HARGA + REMINDER CUSTOM")
+    print("🤖 BOT CETAK HARGA + POP MAKER + REMINDER CUSTOM")
     print("=" * 50)
     print(f"📱 Group ID: {GROUP_CHAT_ID}")
     print(f"📌 Subtopik MENU ID: {MESSAGE_THREAD_ID}")
     print(f"🔐 Reminder Custom: /reminder (password: {ADMIN_PASSWORD})")
-    print(f"📐 Ukuran: A4 (150 DPI) - {IMG_W}x{IMG_H} px")
+    print(f"📐 Ukuran A4: {IMG_W}x{IMG_H} px (150 DPI)")
+    print(f"🖼️ POP Template: {TEMPLATE_SIZE[0]}x{TEMPLATE_SIZE[1]} px")
     print("=" * 50)
     print("\n📋 JADWAL REMINDER YANG TERSEDIA:")
     print("   • setiaphari      - Setiap hari")
@@ -903,6 +1089,9 @@ async def main():
     print("   • 2minggu_senin   - 2 minggu sekali di hari Senin")
     print("   • 2minggu_jumat   - 2 minggu sekali di hari Jumat")
     print("   • tanggal         - Setiap tanggal tertentu (contoh: 15|pesan)")
+    print("\n📋 FORMAT POP MAKER:")
+    print("   • /pop lalu kirim: PLU.Harga")
+    print("   • Contoh: 10008989.15000")
     print("=" * 50)
     
     application = Application.builder().token(TOKEN).build()
@@ -913,15 +1102,17 @@ async def main():
     application.add_handler(CommandHandler("promo", set_mode))
     application.add_handler(CommandHandler("normal", set_mode))
     application.add_handler(CommandHandler("paket", set_mode))
+    application.add_handler(CommandHandler("pop", set_mode))
     
     # Handler untuk pesan biasa
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Jalankan scheduler manual di background (hanya reminder custom)
+    # Jalankan scheduler manual di background
     asyncio.create_task(scheduler_loop(application))
     
-    print("\n✅ Bot berjalan dengan reminder custom...")
+    print("\n✅ Bot berjalan dengan POP Maker & reminder custom...")
     print("💡 Tips: Gunakan /reminder untuk mengakses menu reminder")
+    print("💡 Tips: Gunakan /pop untuk membuat gambar POP dari PLU")
     
     await application.initialize()
     await application.start()
