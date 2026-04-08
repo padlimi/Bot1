@@ -79,7 +79,8 @@ SCALE = 2
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [
         ["/promo", "/normal"],
-        ["/paket", "/pop"]
+        ["/paket", "/pop"],
+        ["/reminder", "/help"]
     ],
     resize_keyboard=True,      # Menyesuaikan ukuran tombol
     one_time_keyboard=False,   # TOMOL TIDAK AKAN HILANG setelah ditekan
