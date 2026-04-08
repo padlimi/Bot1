@@ -2,6 +2,7 @@ import os
 import io
 import math
 import logging
+import sys
 from datetime import datetime
 from io import BytesIO
 import pytz
@@ -11,11 +12,22 @@ from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 import asyncio
 import aiohttp
 import numpy as np
+import gc
 
 # ======================================================
-# LOGGING
+# KONFIGURASI AWAL
 # ======================================================
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(BASE_DIR)
+
+# LOGGING
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 logger = logging.getLogger(__name__)
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -57,7 +69,7 @@ GAP = 5
 TEMPLATE_SIZE = (720, 1018)
 PRODUCT_AREA = {"x": 38, "y": 148, "width": 644, "height": 700}
 PRICE_AREA = {"x": 38, "y": 848, "width": 644, "height": 139}
-SCALE = 2  # Render at 2x for sharp output on phones
+SCALE = 2
 
 # ======================================================
 # KEYBOARD
@@ -92,10 +104,12 @@ def get_font(size, bold=True):
         "/System/Library/Fonts/Helvetica.ttc",
         "C:\\Windows\\Fonts\\Arial.ttf",
         "C:\\Windows\\Fonts\\Arialbd.ttf",
+        "Arial Black.ttf",
+        "Arial Bold.ttf"
     ]
     for font_file in font_files:
         try:
-            if bold and "Bold" not in font_file and "bd" not in font_file.lower():
+            if bold and "Bold" not in font_file and "bd" not in font_file.lower() and "Black" not in font_file:
                 if "Regular" in font_file or "Arial.ttf" == font_file:
                     continue
             return ImageFont.truetype(font_file, size)
@@ -122,7 +136,7 @@ def fit_text_to_width(draw, text, max_width, initial_size, bold=True):
         text_width = bbox[2] - bbox[0]
         if text_width <= max_width:
             return font, size
-        size -= 4
+        size -= 2
     return get_font(16, bold), 16
 
 def get_current_date_wib():
@@ -138,6 +152,7 @@ def get_current_date_wib():
 # ======================================================
 # FUNGSI GAMBAR KARTU UNTUK CETAK HARGA
 # ======================================================
+
 def draw_paket(draw, x, y, harga_normal, harga_spesial):
     draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=BLUE_BG, outline=BLACK, width=1)
     header_text = "PAKET HEMAT"
@@ -193,16 +208,71 @@ def draw_paket(draw, x, y, harga_normal, harga_spesial):
     draw.text((box_x2 - 15, box_y + box_h // 2), txt_spesial, fill=WHITE, anchor="rm", font=spesial_font)
 
 def draw_promo(draw, x, y, nama, harga):
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=(255, 240, 0), outline=BLACK, width=1)
-    draw.rectangle([x, y, x + CELL_W, y + int(CELL_H * 0.2)], fill=RED_HEADER)
-    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.12)), "PROMOSI", fill=(255, 240, 0), anchor="mm", font=get_font(44, bold=True))
+    """
+    Draw promo card with improved price centering and boldness
+    """
+    # Background kuning promo
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=(255, 235, 0), outline=BLACK, width=2)
+    
+    # Header MERAH (lebih pendek agar harga lebih lega)
+    header_height = int(CELL_H * 0.2)
+    draw.rectangle([x, y, x + CELL_W, y + header_height], fill=RED_HEADER)
+    
+    # Teks "PROMOSI"
+    promo_font = get_font(44, bold=True)
+    draw.text((x + CELL_W // 2, y + header_height // 2), "PROMOSI", 
+              fill=(255, 235, 0), anchor="mm", font=promo_font)
+    
+    # Nama produk
     nama_text = nama.upper()
-    max_width = CELL_W - 40
-    name_font, _ = fit_text_to_width(draw, nama_text, max_width, 40, bold=True)
-    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.42)), nama_text, fill=BLACK, anchor="mm", font=name_font)
+    max_width = CELL_W - 50
+    
+    # Batasi panjang nama
+    if len(nama_text) > 35:
+        nama_text = nama_text[:32] + "..."
+    
+    name_font, name_size = fit_text_to_width(draw, nama_text, max_width, 34, bold=True)
+    name_y = y + header_height + int(CELL_H * 0.14)
+    draw.text((x + CELL_W // 2, name_y), nama_text, fill=BLACK, anchor="mm", font=name_font)
+    
+    # ========== HARGA - DIPERBAIKI ==========
     harga_text = format_angka(harga)
-    price_font, _ = fit_text_to_width(draw, harga_text, CELL_W - 60, 100, bold=True)
-    draw.text((x + CELL_W // 2, y + int(CELL_H * 0.75)), harga_text, fill=RED_HEADER, anchor="mm", font=price_font)
+    harga_display = f"Rp {harga_text}"
+    
+    # Font harga: lebih besar dan lebih tebal
+    price_size = 80
+    price_font = get_font(price_size, bold=True)
+    bbox = draw.textbbox((0, 0), harga_display, font=price_font)
+    
+    while (bbox[2] - bbox[0] > CELL_W - 80) and price_size > 40:
+        price_size -= 4
+        price_font = get_font(price_size, bold=True)
+        bbox = draw.textbbox((0, 0), harga_display, font=price_font)
+    
+    # Posisi center sempurna
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    price_x = x + (CELL_W - text_width) // 2
+    
+    # Posisi Y: di 70% area setelah header
+    available_height = CELL_H - header_height
+    price_y = y + header_height + int(available_height * 0.68) - (text_height // 2)
+    
+    # Efek bold dengan multiple layer
+    # Layer 1: shadow gelap
+    draw.text((price_x + 2, price_y + 2), harga_display, fill=(180, 0, 0), font=price_font)
+    # Layer 2: outline tipis
+    draw.text((price_x - 1, price_y - 1), harga_display, fill=(180, 0, 0), font=price_font)
+    # Layer 3: teks utama
+    draw.text((price_x, price_y), harga_display, fill=RED_HEADER, font=price_font)
+    
+    # Tambahan garis dekoratif di atas harga
+    line_y = price_y - 12
+    if line_y > name_y + 20:
+        line_width = min(120, CELL_W - 120)
+        draw.line([(x + CELL_W // 2 - line_width//2, line_y),
+                   (x + CELL_W // 2 + line_width//2, line_y)], 
+                  fill=RED_HEADER, width=3)
 
 def draw_normal(draw, x, y, nama, harga):
     draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=WHITE, outline=BLACK, width=1)
@@ -235,7 +305,7 @@ def parse_pop_input(line):
     return {'plu': plu, 'harga': harga}
 
 # ======================================================
-# FUNGSI POP IMAGE (DARI bot.ts YANG DIPERBAIKI)
+# FUNGSI POP IMAGE
 # ======================================================
 async def download_product_image(plu: str) -> BytesIO:
     """Download product image from Indomaret CDN"""
@@ -400,6 +470,8 @@ async def generate_pop_image(plu: str, price: str) -> BytesIO:
         output = BytesIO()
         template_rgb.save(output, format='JPEG', quality=100, optimize=True)
         output.seek(0)
+        
+        gc.collect()
         
         return output
         
