@@ -13,8 +13,15 @@ import asyncio
 import aiohttp
 import numpy as np
 import gc
-from google import genai
-from google.genai import types
+
+# Perbaikan import untuk Google Gemini
+try:
+    from google import genai
+    from google.genai import types
+    GOOGLE_AVAILABLE = True
+except ImportError:
+    GOOGLE_AVAILABLE = False
+    print("⚠️ Peringatan: Library google-genai tidak terinstall. Fitur AI tidak akan berfungsi.")
 
 # ======================================================
 # KONFIGURASI AWAL
@@ -41,17 +48,24 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 gemini_client = None
 GEMINI_MODEL = "gemini-2.0-flash"
 SYSTEM_PROMPT = (
-    "Kamu adalah asisten AI yang membantu dalam bahasa Indonesia, nama kamu adalah bot th2t. "
-    "Jawab dengan ramah, jelas, dan informatif dan jenaka. "
-    "Selalu selingi candaan atau jokes disetiap jawaban anda. "
+    "Kamu adalah asisten AI yang membantu dalam bahasa Indonesia. "
+    "Jawab dengan ramah, jelas, dan informatif. "
     "Jika ditanya tentang harga atau produk, bantu semampu yang kamu bisa."
 )
 
-if GEMINI_API_KEY:
-    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    logger.info("✅ Gemini AI berhasil dikonfigurasi")
+if GOOGLE_AVAILABLE and GEMINI_API_KEY:
+    try:
+        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        logger.info("✅ Gemini AI berhasil dikonfigurasi")
+    except Exception as e:
+        logger.error(f"❌ Gagal konfigurasi Gemini AI: {e}")
+        gemini_client = None
 else:
-    logger.warning("⚠️ GEMINI_API_KEY tidak ditemukan, fitur AI tidak aktif")
+    if not GOOGLE_AVAILABLE:
+        logger.warning("⚠️ Library google-genai tidak terinstall")
+    if not GEMINI_API_KEY:
+        logger.warning("⚠️ GEMINI_API_KEY tidak ditemukan")
+    logger.warning("⚠️ Fitur AI tidak aktif")
 
 # Menyimpan riwayat chat per user
 ai_chat_sessions = {}
@@ -481,8 +495,8 @@ async def generate_pop_image(plu: str, price: str) -> BytesIO:
 # FUNGSI GEMINI AI
 # ======================================================
 async def ask_gemini(user_id: int, user_message: str) -> str:
-    if not gemini_client:
-        return "❌ Fitur AI tidak aktif. Pastikan GEMINI_API_KEY sudah dikonfigurasi."
+    if not GOOGLE_AVAILABLE or not gemini_client:
+        return "❌ Fitur AI tidak aktif. Pastikan GEMINI_API_KEY sudah dikonfigurasi dan library google-genai terinstall."
     
     try:
         if user_id not in ai_chat_sessions:
@@ -1068,10 +1082,10 @@ async def reminder_command(update: Update, context: CallbackContext):
     context.user_data['awaiting_password'] = True
 
 async def ai_command(update: Update, context: CallbackContext):
-    if not gemini_client:
+    if not GOOGLE_AVAILABLE or not gemini_client:
         await update.message.reply_text(
             "❌ *Fitur AI tidak aktif*\n\n"
-            "Pastikan GEMINI_API_KEY sudah dikonfigurasi.",
+            "Pastikan GEMINI_API_KEY sudah dikonfigurasi dan library google-genai terinstall.",
             parse_mode="Markdown"
         )
         return
@@ -1289,8 +1303,16 @@ async def main():
     print(f"📐 Ukuran A4: {IMG_W}x{IMG_H} px (150 DPI)")
     print(f"🖼️ POP Template: {TEMPLATE_SIZE[0]}x{TEMPLATE_SIZE[1]} px (Scale: {SCALE}x)")
     
-    # PERBAIKAN: menggunakan gemini_client bukan gemini_model
-    gemini_status = "✅ Aktif" if gemini_client is not None else "❌ Tidak aktif (GEMINI_API_KEY tidak ada)"
+    # PERBAIKAN FINAL: menggunakan gemini_client dengan pengecekan yang lebih aman
+    if GOOGLE_AVAILABLE and gemini_client is not None:
+        gemini_status = "✅ Aktif"
+    else:
+        gemini_status = "❌ Tidak aktif"
+        if not GOOGLE_AVAILABLE:
+            gemini_status += " (library google-genai tidak terinstall)"
+        elif not GEMINI_API_KEY:
+            gemini_status += " (GEMINI_API_KEY tidak ada)"
+    
     print(f"🤖 Gemini AI: {gemini_status}")
     print("=" * 60)
     
@@ -1309,7 +1331,7 @@ async def main():
     
     asyncio.create_task(scheduler_loop(application))
     
-    print("\n✅ Bot berjalan dengan Gemini AI terintegrasi...")
+    print("\n✅ Bot berjalan...")
     print("💡 Tips: Gunakan /ai untuk masuk mode AI")
     print("💡 Tips: Gunakan /stop_ai untuk keluar mode AI")
     print("\n⏳ Menunggu pesan...")
