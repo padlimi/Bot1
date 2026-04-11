@@ -47,6 +47,7 @@ BLUE_BG = (0, 102, 210)
 RED_HEADER = (220, 0, 0)
 RED_SHADOW = (160, 0, 0)
 RED_LINE = (255, 0, 0)
+YELLOW_BG = (255, 235, 0)
 
 A4_W = 1240
 A4_H = 1754
@@ -127,6 +128,18 @@ def format_angka(harga):
         return f"{angka:,}".replace(",", ".")
     except:
         return str(harga)
+
+def format_rupiah(harga):
+    """Format harga ke format rupiah dengan Rp"""
+    try:
+        if isinstance(harga, (int, float)):
+            angka = int(harga)
+        else:
+            angka_str = ''.join(filter(str.isdigit, str(harga)))
+            angka = int(angka_str) if angka_str else 0
+        return f"Rp {angka:,}".replace(",", ".")
+    except:
+        return f"Rp {harga}"
 
 def fit_text_to_width(draw, text, max_width, initial_size, bold=True):
     size = initial_size
@@ -209,19 +222,19 @@ def draw_paket(draw, x, y, harga_normal, harga_spesial):
 
 def draw_promo(draw, x, y, nama, harga):
     """
-    Draw promo card with improved price centering and boldness
+    Draw promo card with LARGER price font
     """
     # Background kuning promo
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=(255, 235, 0), outline=BLACK, width=2)
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=YELLOW_BG, outline=BLACK, width=2)
     
-    # Header MERAH (lebih pendek agar harga lebih lega)
-    header_height = int(CELL_H * 0.2)
+    # Header MERAH - diperkecil agar area harga lebih besar
+    header_height = int(CELL_H * 0.16)  # dari 0.2 jadi 0.16
     draw.rectangle([x, y, x + CELL_W, y + header_height], fill=RED_HEADER)
     
     # Teks "PROMOSI"
     promo_font = get_font(44, bold=True)
     draw.text((x + CELL_W // 2, y + header_height // 2), "PROMOSI", 
-              fill=(255, 235, 0), anchor="mm", font=promo_font)
+              fill=YELLOW_BG, anchor="mm", font=promo_font)
     
     # Nama produk
     nama_text = nama.upper()
@@ -232,19 +245,19 @@ def draw_promo(draw, x, y, nama, harga):
         nama_text = nama_text[:32] + "..."
     
     name_font, name_size = fit_text_to_width(draw, nama_text, max_width, 34, bold=True)
-    name_y = y + header_height + int(CELL_H * 0.14)
+    name_y = y + header_height + int(CELL_H * 0.12)
     draw.text((x + CELL_W // 2, name_y), nama_text, fill=BLACK, anchor="mm", font=name_font)
     
-    # ========== HARGA - DIPERBAIKI ==========
-    harga_text = format_angka(harga)
-    harga_display = f"Rp {harga_text}"
+    # ========== HARGA - DIPERBESAR ==========
+    harga_display = format_rupiah(harga)
     
-    # Font harga: lebih besar dan lebih tebal
-    price_size = 80
+    # Font harga: LEBIH BESAR - mulai dari 100
+    price_size = 100
     price_font = get_font(price_size, bold=True)
     bbox = draw.textbbox((0, 0), harga_display, font=price_font)
     
-    while (bbox[2] - bbox[0] > CELL_W - 80) and price_size > 40:
+    # Kurangi ukuran jika terlalu lebar
+    while (bbox[2] - bbox[0] > CELL_W - 60) and price_size > 50:
         price_size -= 4
         price_font = get_font(price_size, bold=True)
         bbox = draw.textbbox((0, 0), harga_display, font=price_font)
@@ -254,25 +267,27 @@ def draw_promo(draw, x, y, nama, harga):
     text_height = bbox[3] - bbox[1]
     price_x = x + (CELL_W - text_width) // 2
     
-    # Posisi Y: di 70% area setelah header
+    # Posisi Y: di tengah area yang tersisa
     available_height = CELL_H - header_height
-    price_y = y + header_height + int(available_height * 0.68) - (text_height // 2)
+    price_y = y + header_height + (available_height - text_height) // 2 + int(CELL_H * 0.05)
     
-    # Efek bold dengan multiple layer
-    # Layer 1: shadow gelap
-    draw.text((price_x + 2, price_y + 2), harga_display, fill=(180, 0, 0), font=price_font)
-    # Layer 2: outline tipis
-    draw.text((price_x - 1, price_y - 1), harga_display, fill=(180, 0, 0), font=price_font)
+    # Efek bold dengan multiple layer untuk harga besar
+    # Layer 1: shadow gelap (lebih tebal)
+    draw.text((price_x + 3, price_y + 3), harga_display, fill=(180, 0, 0), font=price_font)
+    draw.text((price_x + 2, price_y + 2), harga_display, fill=(200, 0, 0), font=price_font)
+    # Layer 2: outline
+    draw.text((price_x - 2, price_y - 1), harga_display, fill=(180, 0, 0), font=price_font)
+    draw.text((price_x + 1, price_y - 1), harga_display, fill=(180, 0, 0), font=price_font)
     # Layer 3: teks utama
     draw.text((price_x, price_y), harga_display, fill=RED_HEADER, font=price_font)
     
-    # Tambahan garis dekoratif di atas harga
-    line_y = price_y - 12
-    if line_y > name_y + 20:
-        line_width = min(120, CELL_W - 120)
+    # Garis dekoratif di atas harga
+    line_y = price_y - 15
+    if line_y > name_y + 25:
+        line_width = min(150, CELL_W - 100)
         draw.line([(x + CELL_W // 2 - line_width//2, line_y),
                    (x + CELL_W // 2 + line_width//2, line_y)], 
-                  fill=RED_HEADER, width=3)
+                  fill=RED_HEADER, width=4)
 
 def draw_normal(draw, x, y, nama, harga):
     draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=WHITE, outline=BLACK, width=1)
@@ -334,39 +349,39 @@ def flood_fill_remove_background(image: Image.Image) -> Image.Image:
         return r >= 235 and g >= 235 and b >= 235
     
     # Add edge pixels
-    for x in range(w):
-        r, g, b, a = img_array[0, x]
-        if is_near_white(r, g, b) and not visited[0, x]:
-            visited[0, x] = 1
-            queue.append((x, 0))
+    for x_pos in range(w):
+        r, g, b, a = img_array[0, x_pos]
+        if is_near_white(r, g, b) and not visited[0, x_pos]:
+            visited[0, x_pos] = 1
+            queue.append((x_pos, 0))
     
-    for x in range(w):
-        r, g, b, a = img_array[h-1, x]
-        if is_near_white(r, g, b) and not visited[h-1, x]:
-            visited[h-1, x] = 1
-            queue.append((x, h-1))
+    for x_pos in range(w):
+        r, g, b, a = img_array[h-1, x_pos]
+        if is_near_white(r, g, b) and not visited[h-1, x_pos]:
+            visited[h-1, x_pos] = 1
+            queue.append((x_pos, h-1))
     
-    for y in range(h):
-        r, g, b, a = img_array[y, 0]
-        if is_near_white(r, g, b) and not visited[y, 0]:
-            visited[y, 0] = 1
-            queue.append((0, y))
+    for y_pos in range(h):
+        r, g, b, a = img_array[y_pos, 0]
+        if is_near_white(r, g, b) and not visited[y_pos, 0]:
+            visited[y_pos, 0] = 1
+            queue.append((0, y_pos))
     
-    for y in range(h):
-        r, g, b, a = img_array[y, w-1]
-        if is_near_white(r, g, b) and not visited[y, w-1]:
-            visited[y, w-1] = 1
-            queue.append((w-1, y))
+    for y_pos in range(h):
+        r, g, b, a = img_array[y_pos, w-1]
+        if is_near_white(r, g, b) and not visited[y_pos, w-1]:
+            visited[y_pos, w-1] = 1
+            queue.append((w-1, y_pos))
     
     # BFS flood fill
     idx = 0
     while idx < len(queue):
-        x, y = queue[idx]
+        x_pos, y_pos = queue[idx]
         idx += 1
         
-        img_array[y, x, 3] = 0
+        img_array[y_pos, x_pos, 3] = 0
         
-        for nx, ny in [(x+1, y), (x-1, y), (x, y+1), (x, y-1)]:
+        for nx, ny in [(x_pos+1, y_pos), (x_pos-1, y_pos), (x_pos, y_pos+1), (x_pos, y_pos-1)]:
             if 0 <= nx < w and 0 <= ny < h and not visited[ny, nx]:
                 r, g, b, a = img_array[ny, nx]
                 if is_near_white(r, g, b):
@@ -376,13 +391,18 @@ def flood_fill_remove_background(image: Image.Image) -> Image.Image:
     return Image.fromarray(img_array, 'RGBA')
 
 def create_price_image(price: str, width: int, height: int) -> Image.Image:
-    """Membuat gambar teks harga dengan posisi presisi seperti TypeScript"""
+    """Membuat gambar teks harga dengan format rupiah"""
     img = Image.new('RGBA', (width, height), (255, 255, 255, 0))
     draw = ImageDraw.Draw(img)
     
+    # Format harga ke rupiah
+    price_formatted = format_rupiah(price)
+    
     base_size = 160
-    if len(price) > 8:
-        size = max(90, base_size - (len(price) - 8) * 10)
+    if len(price_formatted) > 12:
+        size = max(90, base_size - (len(price_formatted) - 12) * 8)
+    elif len(price_formatted) > 8:
+        size = max(100, base_size - (len(price_formatted) - 8) * 10)
     else:
         size = base_size
     
@@ -394,14 +414,14 @@ def create_price_image(price: str, width: int, height: int) -> Image.Image:
         except:
             font = get_font(size, bold=True)
     
-    bbox = draw.textbbox((0, 0), price, font=font)
+    bbox = draw.textbbox((0, 0), price_formatted, font=font)
     text_width = bbox[2] - bbox[0]
     text_height = bbox[3] - bbox[1]
     
     x = (width - text_width) // 2
     y = (height - text_height) // 2
     
-    draw.text((x, y), price, fill=(17, 17, 17), font=font)
+    draw.text((x, y), price_formatted, fill=(17, 17, 17), font=font)
     
     return img
 
@@ -728,7 +748,7 @@ async def process_new_reminder_data(update: Update, context: CallbackContext):
                         )
                         return True
             
-            edit_id = context.user_data['edit_id']
+            edit_id = context.user_data.get('edit_id')
             if edit_id is not None:
                 for r in custom_reminders:
                     if r['id'] == edit_id:
@@ -1082,15 +1102,24 @@ async def handle_message(update: Update, context: CallbackContext):
             
             pop_data = parse_pop_input(line)
             if not pop_data:
-                await update.message.reply_text(f"❌ Format salah untuk POP!\nGunakan: `PLU.Harga`\nContoh: `10008989.15000`\n\nPLU harus 8 digit angka", parse_mode="Markdown")
+                await update.message.reply_text(
+                    f"❌ Format salah untuk POP!\n"
+                    f"Gunakan: `PLU.Harga`\n"
+                    f"Contoh: `10008989.15000`\n\n"
+                    f"PLU harus 8 digit angka", 
+                    parse_mode="Markdown"
+                )
                 continue
             
             try:
+                # Format harga untuk caption
+                harga_formatted = format_rupiah(pop_data['harga'])
+                
                 await update.message.reply_text(f"🖼️ Membuat POP untuk PLU {pop_data['plu']}...")
                 img_buffer = await generate_pop_image(pop_data['plu'], pop_data['harga'])
                 await update.message.reply_photo(
                     photo=img_buffer, 
-                    caption=f"🖼️ *POP*\nPLU: {pop_data['plu']}\nHarga: {pop_data['harga']}",
+                    caption=f"🖼️ *POP*\nPLU: {pop_data['plu']}\nHarga: {harga_formatted}",
                     parse_mode="Markdown"
                 )
             except Exception as e:
