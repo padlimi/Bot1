@@ -13,7 +13,6 @@ import asyncio
 import aiohttp
 import numpy as np
 import gc
-import google.generativeai as genai
 
 # ======================================================
 # KONFIGURASI AWAL
@@ -32,28 +31,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-
-# ======================================================
-# KONFIGURASI GEMINI AI
-# ======================================================
-gemini_model = None
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        system_instruction=(
-            "Kamu adalah asisten AI yang membantu dalam bahasa Indonesia. "
-            "Jawab dengan ramah, jelas, dan informatif. "
-            "Jika ditanya tentang harga atau produk, bantu semampu yang kamu bisa."
-        )
-    )
-    logger.info("✅ Gemini AI berhasil dikonfigurasi")
-else:
-    logger.warning("⚠️ GEMINI_API_KEY tidak ditemukan, fitur AI tidak aktif")
-
-# Menyimpan riwayat chat per user
-ai_chat_sessions = {}
 
 # ======================================================
 # KONFIGURASI GRUP DAN SUBTOPIK
@@ -99,8 +76,7 @@ SCALE = 2
 # ======================================================
 MAIN_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("/promo"), KeyboardButton("/normal")],
-    [KeyboardButton("/paket"), KeyboardButton("/pop")],
-    [KeyboardButton("/ai"), KeyboardButton("/stop_ai")]
+    [KeyboardButton("/paket"), KeyboardButton("/pop")]
 ], resize_keyboard=True, one_time_keyboard=False)
 
 # ======================================================
@@ -232,18 +208,26 @@ def draw_paket(draw, x, y, harga_normal, harga_spesial):
     draw.text((box_x2 - 15, box_y + box_h // 2), txt_spesial, fill=WHITE, anchor="rm", font=spesial_font)
 
 def draw_promo(draw, x, y, nama, harga):
+    """
+    Draw promo card with improved price centering and boldness
+    """
+    # Background kuning promo
     draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=(255, 235, 0), outline=BLACK, width=2)
     
+    # Header MERAH (lebih pendek agar harga lebih lega)
     header_height = int(CELL_H * 0.2)
     draw.rectangle([x, y, x + CELL_W, y + header_height], fill=RED_HEADER)
     
+    # Teks "PROMOSI"
     promo_font = get_font(44, bold=True)
     draw.text((x + CELL_W // 2, y + header_height // 2), "PROMOSI", 
               fill=(255, 235, 0), anchor="mm", font=promo_font)
     
+    # Nama produk
     nama_text = nama.upper()
     max_width = CELL_W - 50
     
+    # Batasi panjang nama
     if len(nama_text) > 35:
         nama_text = nama_text[:32] + "..."
     
@@ -251,9 +235,11 @@ def draw_promo(draw, x, y, nama, harga):
     name_y = y + header_height + int(CELL_H * 0.14)
     draw.text((x + CELL_W // 2, name_y), nama_text, fill=BLACK, anchor="mm", font=name_font)
     
+    # ========== HARGA - DIPERBAIKI ==========
     harga_text = format_angka(harga)
     harga_display = f"Rp {harga_text}"
     
+    # Font harga: lebih besar dan lebih tebal
     price_size = 80
     price_font = get_font(price_size, bold=True)
     bbox = draw.textbbox((0, 0), harga_display, font=price_font)
@@ -263,17 +249,24 @@ def draw_promo(draw, x, y, nama, harga):
         price_font = get_font(price_size, bold=True)
         bbox = draw.textbbox((0, 0), harga_display, font=price_font)
     
+    # Posisi center sempurna
     text_width = bbox[2] - bbox[0]
     text_height = bbox[3] - bbox[1]
     price_x = x + (CELL_W - text_width) // 2
     
+    # Posisi Y: di 70% area setelah header
     available_height = CELL_H - header_height
     price_y = y + header_height + int(available_height * 0.68) - (text_height // 2)
     
+    # Efek bold dengan multiple layer
+    # Layer 1: shadow gelap
     draw.text((price_x + 2, price_y + 2), harga_display, fill=(180, 0, 0), font=price_font)
+    # Layer 2: outline tipis
     draw.text((price_x - 1, price_y - 1), harga_display, fill=(180, 0, 0), font=price_font)
+    # Layer 3: teks utama
     draw.text((price_x, price_y), harga_display, fill=RED_HEADER, font=price_font)
     
+    # Tambahan garis dekoratif di atas harga
     line_y = price_y - 12
     if line_y > name_y + 20:
         line_width = min(120, CELL_W - 120)
@@ -301,6 +294,7 @@ def parse_input_paket(line):
     return {'harga_normal': harga_awal, 'harga_spesial': harga_promo, 'qty': min(qty, 100)}
 
 def parse_pop_input(line):
+    """Parse input untuk POP: PLU.Harga"""
     parts = line.strip().split('.')
     if len(parts) < 2:
         return None
@@ -314,6 +308,7 @@ def parse_pop_input(line):
 # FUNGSI POP IMAGE
 # ======================================================
 async def download_product_image(plu: str) -> BytesIO:
+    """Download product image from Indomaret CDN"""
     url = f"https://cdn-klik.klikindomaret.com/klik-catalog/product/{plu}_meta.jpg"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
@@ -322,6 +317,10 @@ async def download_product_image(plu: str) -> BytesIO:
             return BytesIO(await response.read())
 
 def flood_fill_remove_background(image: Image.Image) -> Image.Image:
+    """
+    BFS flood-fill removal like TypeScript version.
+    Removes connected near-white background from edges while preserving white areas inside product.
+    """
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -334,6 +333,7 @@ def flood_fill_remove_background(image: Image.Image) -> Image.Image:
     def is_near_white(r, g, b):
         return r >= 235 and g >= 235 and b >= 235
     
+    # Add edge pixels
     for x in range(w):
         r, g, b, a = img_array[0, x]
         if is_near_white(r, g, b) and not visited[0, x]:
@@ -358,6 +358,7 @@ def flood_fill_remove_background(image: Image.Image) -> Image.Image:
             visited[y, w-1] = 1
             queue.append((w-1, y))
     
+    # BFS flood fill
     idx = 0
     while idx < len(queue):
         x, y = queue[idx]
@@ -375,6 +376,7 @@ def flood_fill_remove_background(image: Image.Image) -> Image.Image:
     return Image.fromarray(img_array, 'RGBA')
 
 def create_price_image(price: str, width: int, height: int) -> Image.Image:
+    """Membuat gambar teks harga dengan posisi presisi seperti TypeScript"""
     img = Image.new('RGBA', (width, height), (255, 255, 255, 0))
     draw = ImageDraw.Draw(img)
     
@@ -404,6 +406,7 @@ def create_price_image(price: str, width: int, height: int) -> Image.Image:
     return img
 
 async def generate_pop_image(plu: str, price: str) -> BytesIO:
+    """Generate promotional image like the TypeScript bot with exact positioning"""
     scaled_w = TEMPLATE_SIZE[0] * SCALE
     scaled_h = TEMPLATE_SIZE[1] * SCALE
     scaled_product = {k: v * SCALE for k, v in PRODUCT_AREA.items()}
@@ -477,31 +480,10 @@ async def generate_pop_image(plu: str, price: str) -> BytesIO:
         raise
 
 # ======================================================
-# FUNGSI GEMINI AI
-# ======================================================
-async def ask_gemini(user_id: int, user_message: str) -> str:
-    if not gemini_model:
-        return "❌ Fitur AI tidak aktif. Pastikan GEMINI_API_KEY sudah dikonfigurasi."
-    
-    try:
-        if user_id not in ai_chat_sessions:
-            ai_chat_sessions[user_id] = gemini_model.start_chat(history=[])
-        
-        chat = ai_chat_sessions[user_id]
-        
-        response = await asyncio.to_thread(chat.send_message, user_message)
-        
-        return response.text
-    except Exception as e:
-        logger.error(f"Error Gemini AI: {e}")
-        if "quota" in str(e).lower() or "limit" in str(e).lower():
-            return "⚠️ Batas penggunaan AI tercapai. Coba lagi nanti."
-        return f"❌ Terjadi kesalahan pada AI: {str(e)}"
-
-# ======================================================
 # REMINDER CUSTOM FUNCTIONS
 # ======================================================
 async def send_reminder_custom(context: CallbackContext):
+    """Mengirim reminder custom yang sudah dijadwalkan"""
     try:
         wib = pytz.timezone('Asia/Jakarta')
         now = datetime.now(wib)
@@ -1004,6 +986,7 @@ async def handle_reminder_menu(update: Update, context: CallbackContext):
 # SCHEDULER MANUAL
 # ======================================================
 async def scheduler_loop(application):
+    """Loop penjadwalan hanya untuk reminder custom"""
     while True:
         try:
             await send_reminder_custom(application)
@@ -1017,7 +1000,7 @@ async def scheduler_loop(application):
 # ======================================================
 async def start(update: Update, context):
     await update.message.reply_text(
-        "🎨 *Bot Cetak Harga Mewah + POP Maker + AI*\n\n"
+        "🎨 *Bot Cetak Harga Mewah + POP Maker*\n\n"
         "📦 *Mode PAKET* (2 harga)\n"
         "Format: `harga_normal.harga_promo.qty`\n"
         "Contoh: `600000.70000.3`\n\n"
@@ -1031,9 +1014,6 @@ async def start(update: Update, context):
         "Format: `PLU.Harga`\n"
         "Contoh: `10008989.15000`\n"
         "Catatan: PLU harus 8 digit angka\n\n"
-        "🤖 *Mode AI* (Tanya apa saja ke Gemini AI)\n"
-        "Gunakan /ai untuk masuk mode AI\n"
-        "Gunakan /stop_ai untuk keluar mode AI\n\n"
         "🔐 *Reminder:* /reminder\n\n"
         "Pilih mode dari tombol di bawah!",
         parse_mode="Markdown",
@@ -1048,108 +1028,52 @@ async def reminder_command(update: Update, context: CallbackContext):
     )
     context.user_data['awaiting_password'] = True
 
-async def ai_command(update: Update, context: CallbackContext):
-    if not gemini_model:
-        await update.message.reply_text(
-            "❌ *Fitur AI tidak aktif*\n\n"
-            "Pastikan GEMINI_API_KEY sudah dikonfigurasi.",
-            parse_mode="Markdown"
-        )
-        return
-    
-    context.user_data['mode'] = None
-    context.user_data['ai_mode'] = True
-    await update.message.reply_text(
-        "🤖 *Mode AI Aktif!*\n\n"
-        "Sekarang kamu bisa bertanya apa saja kepada Gemini AI.\n\n"
-        "💡 Contoh pertanyaan:\n"
-        "• Apa tips meningkatkan penjualan?\n"
-        "• Bagaimana cara membuat diskon yang menarik?\n"
-        "• Jelaskan strategi promosi produk\n\n"
-        "Ketik /stop_ai untuk keluar dari mode AI.",
-        parse_mode="Markdown",
-        reply_markup=ReplyKeyboardMarkup(
-            [[KeyboardButton("/stop_ai")]],
-            resize_keyboard=True,
-            one_time_keyboard=False
-        )
-    )
-
-async def stop_ai_command(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    context.user_data['ai_mode'] = False
-    
-    if user_id in ai_chat_sessions:
-        del ai_chat_sessions[user_id]
-    
-    await update.message.reply_text(
-        "✅ *Mode AI dinonaktifkan.*\n\nRiwayat percakapan dihapus. Kembali ke menu utama.",
-        parse_mode="Markdown",
-        reply_markup=MAIN_KEYBOARD
-    )
-
 async def set_mode(update: Update, context):
     mode = update.message.text.replace('/', '')
     context.user_data['mode'] = mode
-    context.user_data['ai_mode'] = False
     await update.message.reply_text(
         f"✅ Mode {mode.upper()} aktif - Kirim data sekarang:",
         reply_markup=ForceReply()
     )
 
 async def handle_message(update: Update, context: CallbackContext):
+    # Cek password dulu
     if await check_password(update, context):
         return
     
+    # Cek menu reminder
     if await handle_reminder_menu(update, context):
         return
     
+    # Cek proses edit reminder
     if await process_new_reminder_data(update, context):
         return
     
+    # Cek proses edit reminder (pilih ID)
     if context.user_data.get('editing_reminder'):
         if await process_edit_reminder(update, context):
             return
     
+    # Cek proses delete reminder
     if context.user_data.get('deleting_reminder'):
         if await process_delete_reminder(update, context):
             return
     
+    # Cek proses toggle reminder
     if context.user_data.get('toggling_reminder'):
         if await process_toggle_reminder(update, context):
             return
-
-    # ======================================================
-    # HANDLE MODE AI
-    # ======================================================
-    if context.user_data.get('ai_mode'):
-        user_id = update.effective_user.id
-        user_message = update.message.text.strip()
-        
-        await update.message.chat.send_action("typing")
-        
-        response = await ask_gemini(user_id, user_message)
-        
-        if len(response) > 4096:
-            for i in range(0, len(response), 4096):
-                await update.message.reply_text(response[i:i+4096])
-        else:
-            await update.message.reply_text(response)
-        return
     
-    # Handle mode cetak harga
+    # Handle mode
     mode = context.user_data.get('mode')
     if not mode:
-        await update.message.reply_text(
-            "❌ Pilih mode dulu:\n"
-            "/paket, /promo, /normal, /pop\n"
-            "atau /ai untuk tanya ke Gemini AI"
-        )
+        await update.message.reply_text("❌ Pilih mode dulu: /paket, /promo, /normal, atau /pop")
         return
     
     text = update.message.text.strip()
     lines = text.split('\n')
     
+    # Special handling for POP mode
     if mode == 'pop':
         for line in lines:
             line = line.strip()
@@ -1175,6 +1099,7 @@ async def handle_message(update: Update, context: CallbackContext):
         context.user_data['mode'] = None
         return
     
+    # Handle other modes (paket, promo, normal)
     all_items = []
     errors = []
     
@@ -1262,34 +1187,46 @@ async def main():
         return
     
     print("=" * 60)
-    print("🤖 BOT CETAK HARGA + POP MAKER + REMINDER + GEMINI AI")
+    print("🤖 BOT CETAK HARGA + POP MAKER + REMINDER CUSTOM")
     print("=" * 60)
     print(f"📱 Group ID: {GROUP_CHAT_ID}")
     print(f"📌 Subtopik MENU ID: {MESSAGE_THREAD_ID}")
     print(f"🔐 Reminder Custom: /reminder (password: {ADMIN_PASSWORD})")
     print(f"📐 Ukuran A4: {IMG_W}x{IMG_H} px (150 DPI)")
     print(f"🖼️ POP Template: {TEMPLATE_SIZE[0]}x{TEMPLATE_SIZE[1]} px (Scale: {SCALE}x)")
-    print(f"🤖 Gemini AI: {'✅ Aktif' if gemini_model else '❌ Tidak aktif (GEMINI_API_KEY tidak ada)'}")
+    print("=" * 60)
+    print("\n📋 JADWAL REMINDER YANG TERSEDIA:")
+    print("   • setiaphari      - Setiap hari")
+    print("   • weekday         - Senin s/d Jumat")
+    print("   • weekend         - Sabtu & Minggu")
+    print("   • senin/minggu    - Setiap minggu di hari tertentu")
+    print("   • 2minggu_senin   - 2 minggu sekali di hari Senin")
+    print("   • 2minggu_jumat   - 2 minggu sekali di hari Jumat")
+    print("   • tanggal         - Setiap tanggal tertentu")
+    print("\n📋 FORMAT POP MAKER:")
+    print("   • /pop lalu kirim: PLU.Harga")
+    print("   • Contoh: 10008989.15000")
     print("=" * 60)
     
     application = Application.builder().token(TOKEN).build()
     
+    # Handler untuk command
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("reminder", reminder_command))
     application.add_handler(CommandHandler("promo", set_mode))
     application.add_handler(CommandHandler("normal", set_mode))
     application.add_handler(CommandHandler("paket", set_mode))
     application.add_handler(CommandHandler("pop", set_mode))
-    application.add_handler(CommandHandler("ai", ai_command))
-    application.add_handler(CommandHandler("stop_ai", stop_ai_command))
     
+    # Handler untuk pesan biasa
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
+    # Jalankan scheduler manual di background
     asyncio.create_task(scheduler_loop(application))
     
-    print("\n✅ Bot berjalan dengan Gemini AI terintegrasi...")
-    print("💡 Tips: Gunakan /ai untuk masuk mode AI")
-    print("💡 Tips: Gunakan /stop_ai untuk keluar mode AI")
+    print("\n✅ Bot berjalan dengan POP Maker & reminder custom...")
+    print("💡 Tips: Gunakan /reminder untuk mengakses menu reminder")
+    print("💡 Tips: Gunakan /pop untuk membuat gambar POP dari PLU")
     print("\n⏳ Menunggu pesan...")
     
     await application.initialize()
