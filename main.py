@@ -41,8 +41,9 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 gemini_client = None
 GEMINI_MODEL = "gemini-2.0-flash"
 SYSTEM_PROMPT = (
-    "Kamu adalah asisten AI yang membantu dalam bahasa Indonesia. "
-    "Jawab dengan ramah, jelas, dan informatif. "
+    "Kamu adalah asisten AI yang membantu dalam bahasa Indonesia, nama kamu adalah bot th2t. "
+    "Jawab dengan ramah, jelas, dan informatif dan jenaka. "
+    "Selalu selingi candaan atau jokes disetiap jawaban anda. "
     "Jika ditanya tentang harga atau produk, bantu semampu yang kamu bisa."
 )
 
@@ -1287,7 +1288,10 @@ async def main():
     print(f"🔐 Reminder Custom: /reminder (password: {ADMIN_PASSWORD})")
     print(f"📐 Ukuran A4: {IMG_W}x{IMG_H} px (150 DPI)")
     print(f"🖼️ POP Template: {TEMPLATE_SIZE[0]}x{TEMPLATE_SIZE[1]} px (Scale: {SCALE}x)")
-    print(f"🤖 Gemini AI: {'✅ Aktif' if gemini_model else '❌ Tidak aktif (GEMINI_API_KEY tidak ada)'}")
+    
+    # PERBAIKAN: menggunakan gemini_client bukan gemini_model
+    gemini_status = "✅ Aktif" if gemini_client is not None else "❌ Tidak aktif (GEMINI_API_KEY tidak ada)"
+    print(f"🤖 Gemini AI: {gemini_status}")
     print("=" * 60)
     
     application = Application.builder().token(TOKEN).build()
