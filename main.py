@@ -224,8 +224,8 @@ def draw_promo(draw, x, y, nama, harga):
     """
     Draw promo card with LARGER price font
     """
-    # Background kuning promo
-    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=YELLOW_BG, outline=BLACK, width=2)
+    # Background kuning promo - OUTLINE 1px
+    draw.rectangle([x, y, x + CELL_W, y + CELL_H], fill=YELLOW_BG, outline=BLACK, width=1)
     
     # Header MERAH - diperkecil agar area harga lebih besar
     header_height = int(CELL_H * 0.16)  # dari 0.2 jadi 0.16
@@ -438,7 +438,8 @@ async def generate_pop_image(plu: str, price: str) -> BytesIO:
         if not os.path.exists(template_path):
             template = Image.new('RGB', TEMPLATE_SIZE, color=(255, 255, 255))
             draw = ImageDraw.Draw(template)
-            draw.rectangle([0, 0, TEMPLATE_SIZE[0]-1, TEMPLATE_SIZE[1]-1], outline=(200, 200, 200), width=2)
+            # OUTLINE template - 1px
+            draw.rectangle([0, 0, TEMPLATE_SIZE[0]-1, TEMPLATE_SIZE[1]-1], outline=(200, 200, 200), width=1)
             draw.rectangle([PRODUCT_AREA["x"], PRODUCT_AREA["y"], 
                           PRODUCT_AREA["x"]+PRODUCT_AREA["width"], 
                           PRODUCT_AREA["y"]+PRODUCT_AREA["height"]], 
